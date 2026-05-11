@@ -61,11 +61,23 @@ class TariffInfo(BaseModel):
 
 class LoadInfo(BaseModel):
     it_load: List[float] = Field(..., description="24小时 IT 基准负荷，MW")
+    load_profile: str = Field("raw", description="负荷曲线模式：raw/flat/day_peak/night_bias/dual_peak")
     it_load_cap_s3: float = 500.0
     chiller_cap_multiplier: float = 1.5
     qch_cap_max_s3: float = 750.0
     alpha: Optional[float] = None
     flex_windows: List[int] = Field(default_factory=lambda: [2, 5, 8, 12])
+
+
+class DataCenterLoadInfo(BaseModel):
+    mean_it_load_mw: Optional[float] = Field(None, description="数据中心平均 IT 负荷，MW；未提供24小时曲线时用于生成基准负荷")
+    it_load: Optional[List[float]] = Field(None, description="24小时 IT 基准负荷曲线，MW；优先级高于 mean_it_load_mw")
+    load_profile: str = Field("raw", description="负荷曲线模式：raw/flat/day_peak/night_bias/dual_peak")
+    chiller_cap_multiplier: Optional[float] = Field(None, description="制冷机容量倍数，S1/S2 生效")
+    it_load_cap_s3: Optional[float] = Field(None, description="S3 优化后 IT 负荷上限，MW")
+    qch_cap_max_s3: Optional[float] = Field(None, description="S3 制冷机容量上限，MW_th")
+    alpha: Optional[float] = Field(None, description="S3 可时间转移负荷比例")
+    flex_windows: Optional[List[int]] = Field(None, description="S3 时间转移窗口集合")
 
 
 class DeviceParam(BaseModel):
@@ -84,6 +96,10 @@ class DeviceParam(BaseModel):
     cold_storage_cap_cost: Optional[float] = None
     cold_storage_om_rate: Optional[float] = None
     line_capex: Optional[float] = None
+    pv_cap_max: Optional[float] = None
+    wt_cap_max: Optional[float] = None
+    battery_cap_max: Optional[float] = None
+    cold_storage_cap_max: Optional[float] = None
     battery_efficiency: Optional[float] = None
     battery_power_ratio: Optional[float] = None
     battery_soc_min: Optional[float] = None
@@ -111,11 +127,19 @@ class ProjectCreate(BaseModel):
     name: str
     region_name: str
     data_year: int = 2025
+    typical_day_count: int = 6
+    time_step_hours: float = 1.0
     province_key: Optional[str] = None
     description: Optional[str] = ""
     weather_info: Optional[WeatherInfo] = None
     tariff_info: Optional[TariffInfo] = None
     load_info: Optional[LoadInfo] = None
+
+
+class ProjectInputUpdate(BaseModel):
+    weather_info: Optional[Dict[str, Any]] = None
+    tariff_info: Optional[Dict[str, Any]] = None
+    load_info: Optional[Dict[str, Any]] = None
 
 
 class ScenarioConfig(BaseModel):
@@ -138,9 +162,14 @@ class ScenarioConfig(BaseModel):
     grid_zero_tol_annual: float = 1e-6
     gep_tol: float = 5e-9
     carbon_lexicographic: bool = True
+    cost_tie_rel_tol: float = 1e-4
+    cost_tie_abs_tol: float = 1e3
+    carbon_lex_rel_tol: float = 1e-6
+    carbon_lex_abs_tol_kg: float = 1e3
     load_profile: str = "raw"
     it_load_cap_s3: Optional[float] = None
     qch_cap_max_s3: Optional[float] = None
+    data_center_load: Optional[DataCenterLoadInfo] = None
     device_param: Optional[DeviceParam] = None
     solver_param: Optional[SolverParam] = None
     # legacy flat device params override
@@ -236,6 +265,12 @@ def _build_weather_tariff(project: dict, np):
     if w.ndim != 1 or len(w) == 0:
         raise ValueError("weather_info.typical_day_weight must be a non-empty vector")
     n_day = len(w)
+    expected_n_day = int(project.get("typical_day_count") or n_day)
+    if expected_n_day != n_day:
+        raise ValueError(f"region_info.typical_day_count={expected_n_day} does not match weather_info.typical_day_weight length={n_day}")
+    time_step = float(project.get("time_step_hours") or 1.0)
+    if abs(time_step - 1.0) > 1e-9:
+        raise ValueError("region_info.time_step_hours must be 1.0 in the current 24-hour MATLAB-compatible solver")
     d = np.array(wd_raw["d"], dtype=float)
     if d.shape != (24,):
         raise ValueError("load_info.it_load must contain exactly 24 hourly values")
@@ -275,6 +310,10 @@ def _province_payload(province_key: str):
     w = wd["w"]
     solar_avg = _weighted_hourly_average(wd["S"], w, np)
     wind_avg = _weighted_hourly_average(wd["vw"], w, np)
+    temp_dry_avg = _weighted_hourly_average(wd["Tdb"], w, np)
+    temp_wet_avg = _weighted_hourly_average(wd["Twb"], w, np)
+    from core.optimizer import cop_from_twb
+    cop_avg = _weighted_hourly_average(cop_from_twb(np.array(wd["Twb"], dtype=float)), w, np)
     carbon_avg = _weighted_hourly_average(wd["EF"], w, np)
     return {
         "key": province_key,
@@ -282,6 +321,9 @@ def _province_payload(province_key: str):
         "weather_summary": {
             "solar_hourly_avg": solar_avg,
             "wind_hourly_avg": wind_avg,
+            "temp_dry_hourly_avg": temp_dry_avg,
+            "temp_wet_hourly_avg": temp_wet_avg,
+            "cop_hourly_avg": cop_avg,
             "carbon_factor_hourly_avg": carbon_avg,
             "typical_day_weight": list(w),
             "solar_score": min(100, round(max(solar_avg) / 10)),
@@ -306,7 +348,9 @@ def _apply_device_param(cfg, scenario: dict):
         "wt_cap_cost": "cap_cost_wt", "wt_om_cost": "om_wt",
         "battery_cap_cost": "cap_cost_ba", "battery_om_rate": "om_rate_ba",
         "cold_storage_cap_cost": "cap_cost_ct", "cold_storage_om_rate": "om_rate_ct",
-        "line_capex": "lineCapex", "battery_efficiency": "eta_ba",
+        "line_capex": "lineCapex", "pv_cap_max": "CpvMax",
+        "wt_cap_max": "CwtMax", "battery_cap_max": "CbaMax",
+        "cold_storage_cap_max": "CctMax", "battery_efficiency": "eta_ba",
         "battery_power_ratio": "p_ratio_ba", "battery_soc_min": "SOCmin_ba",
         "battery_soc_max": "SOCmax_ba", "battery_soc_initial": "SOC0_ba",
         "cold_storage_efficiency": "eta_ct", "cold_storage_power_ratio": "p_ratio_ct",
@@ -449,6 +493,30 @@ def _dispatch_payload(r, wd):
     return payload
 
 
+def _merge_simulation_load_info(project: dict, scenario: dict):
+    """Merge project load data with simulation-time data center load characteristics."""
+    load_info = dict(project.get("load_info") or {})
+    dc_load = scenario.get("data_center_load") or {}
+
+    if dc_load.get("it_load") is not None:
+        load_info["it_load"] = dc_load["it_load"]
+        load_info["load_source"] = "scenario_24h"
+    elif dc_load.get("mean_it_load_mw") is not None:
+        load_info["it_load"] = [float(dc_load["mean_it_load_mw"])] * 24
+        load_info["load_source"] = "scenario_mean"
+    elif "load_source" not in load_info:
+        load_info["load_source"] = "project_or_province_default"
+
+    for key in (
+        "load_profile", "chiller_cap_multiplier", "it_load_cap_s3",
+        "qch_cap_max_s3", "alpha", "flex_windows",
+    ):
+        if dc_load.get(key) is not None:
+            load_info[key] = dc_load[key]
+
+    return load_info
+
+
 def _metric_series(scan_result):
     def series(key):
         return [r.get(key) for r in scan_result]
@@ -488,14 +556,15 @@ def run_simulation_sync(run_id: str, project_id: str, scenario: dict):
         proj = projects[project_id]
 
         import numpy as np
-        from core.optimizer import OptimizerConfig, solve_region
+        from core.optimizer import OptimizerConfig, solve_region, cop_from_twb
 
-        wd, td = _build_weather_tariff(proj, np)
+        load_info = _merge_simulation_load_info(proj, scenario)
+        proj_for_run = {**proj, "load_info": load_info}
+        wd, td = _build_weather_tariff(proj_for_run, np)
         gep_targets = scenario.get("gep_targets") or make_gep_targets(
             scenario["gep_start"], scenario["gep_end"], scenario["gep_step"]
         )
 
-        load_info = proj.get("load_info") or {}
         solver_param = scenario.get("solver_param") or {}
         cfg = OptimizerConfig(
             scenario=scenario["scenario_type"],
@@ -511,12 +580,18 @@ def run_simulation_sync(run_id: str, project_id: str, scenario: dict):
             grid_zero_tol_annual=scenario.get("grid_zero_tol_annual", 1e-6),
             gep_tol=scenario.get("gep_tol", 5e-9),
             carbon_lexicographic=scenario.get("carbon_lexicographic", True),
-            load_profile=scenario.get("load_profile", "raw"),
+            cost_tie_rel_tol=scenario.get("cost_tie_rel_tol", 1e-4),
+            cost_tie_abs_tol=scenario.get("cost_tie_abs_tol", 1e3),
+            carbon_lex_rel_tol=scenario.get("carbon_lex_rel_tol", 1e-6),
+            carbon_lex_abs_tol_kg=scenario.get("carbon_lex_abs_tol_kg", 1e3),
+            load_profile=scenario.get("load_profile") or load_info.get("load_profile", "raw"),
+            chiller_cap_multiplier=load_info.get("chiller_cap_multiplier", 1.5),
             IT_load_cap_S3=scenario.get("it_load_cap_s3") or load_info.get("it_load_cap_s3", 500.0),
             Qch_cap_max_S3=scenario.get("qch_cap_max_s3") or load_info.get("qch_cap_max_s3", 750.0),
             solver=solver_param.get("solver", "auto"),
             time_limit=solver_param.get("time_limit", 120.0),
             mip_gap=solver_param.get("mip_gap", 5e-3),
+            verbose=solver_param.get("verbose", 0),
         )
         _apply_device_param(cfg, scenario)
 
@@ -552,6 +627,15 @@ def run_simulation_sync(run_id: str, project_id: str, scenario: dict):
             "use_export": cfg.policy == "C",
             "export_ratio_limit": cfg.export_ratio_limit if cfg.policy == "C" else None,
             "alpha": cfg.alpha,
+            "load_profile": cfg.load_profile,
+            "data_center_load_source": load_info.get("load_source"),
+            "mean_it_load_mw": float(np.mean(wd.d)),
+            "peak_it_load_mw": float(np.max(wd.d)),
+            "chiller_cap_multiplier": cfg.chiller_cap_multiplier,
+            "weather_inputs": ["temp_dry", "temp_wet", "solar_irradiance", "wind_speed", "typical_day_weight", "grid_carbon_factor"],
+            "mean_temp_dry_degC": float(np.mean(wd.Tdb)),
+            "mean_temp_wet_degC": float(np.mean(wd.Twb)),
+            "mean_cop": float(np.mean(cop_from_twb(wd.Twb))),
             "use_storage": cfg.scenario in ("S1", "S2", "S3"),
             "use_cold_storage": cfg.scenario in ("S2", "S3"),
             "use_flex": cfg.scenario == "S3",
@@ -607,6 +691,8 @@ def create_project(body: ProjectCreate):
         "name": body.name,
         "region_name": body.region_name,
         "data_year": body.data_year,
+        "typical_day_count": body.typical_day_count,
+        "time_step_hours": body.time_step_hours,
         "province_key": body.province_key or "Prov1",
         "description": body.description,
         "weather_info": body.weather_info.model_dump() if body.weather_info else None,
@@ -629,6 +715,21 @@ def get_project(project_id: str):
     if project_id not in projects:
         raise HTTPException(404, "Project not found")
     return projects[project_id]
+
+
+@app.put("/api/projects/{project_id}/inputs")
+def update_project_inputs(project_id: str, body: ProjectInputUpdate):
+    if project_id not in projects:
+        raise HTTPException(404, "Project not found")
+    proj = projects[project_id]
+    if body.weather_info is not None:
+        proj["weather_info"] = body.weather_info
+    if body.tariff_info is not None:
+        proj["tariff_info"] = body.tariff_info
+    if body.load_info is not None:
+        proj["load_info"] = body.load_info
+    proj["updated_at"] = datetime.now().isoformat()
+    return proj
 
 
 @app.post("/api/scenarios/run")
@@ -763,10 +864,12 @@ def get_interface_schema():
         "output_objects": ["run_meta", "scan_result", "best_points", "metric_series", "dispatch_detail"],
         "models": {
             "project_create": ProjectCreate.model_json_schema(),
+            "project_input_update": ProjectInputUpdate.model_json_schema(),
             "scenario_config": ScenarioConfig.model_json_schema(),
             "weather_info": WeatherInfo.model_json_schema(),
             "tariff_info": TariffInfo.model_json_schema(),
             "load_info": LoadInfo.model_json_schema(),
+            "data_center_load": DataCenterLoadInfo.model_json_schema(),
             "device_param": DeviceParam.model_json_schema(),
             "solver_param": SolverParam.model_json_schema(),
         },

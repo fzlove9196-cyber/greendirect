@@ -70,7 +70,8 @@ class OptimizerConfig:
     # Policy
     curt_rate_limit: float = 0.40
     export_ratio_limit: float = 0.20
-    # S3 caps
+    # Chiller and S3 caps
+    chiller_cap_multiplier: float = 1.5
     IT_load_cap_S3: float = 500.0
     Qch_cap_max_S3: float = 750.0
     # Device params
@@ -85,6 +86,10 @@ class OptimizerConfig:
     om_rate_ba: float = 0.005
     om_rate_ct: float = 0.007
     lineCapex: float = 2e8
+    CpvMax: float = 1e6
+    CwtMax: float = 1e6
+    CbaMax: float = 1e6
+    CctMax: float = 1e6
     eta_ba: float = 0.95
     p_ratio_ba: float = 0.2
     SOCmin_ba: float = 0.1; SOCmax_ba: float = 0.9; SOC0_ba: float = 0.5
@@ -105,6 +110,7 @@ class OptimizerConfig:
     solver: str = "auto"           # auto/cbc/gurobi
     time_limit: float = 120.0      # seconds per GEP target
     mip_gap: float = 5e-3
+    verbose: int = 0
 
 
 @dataclass
@@ -280,10 +286,10 @@ def _solve_one_gep_pulp(
     prob = pulp.LpProblem(f"GreenDirect_z{z}", pulp.LpMinimize)
 
     # ── Capacity variables ──
-    Cpv = pulp.LpVariable("Cpv", 0, 1e6)
-    Cwt = pulp.LpVariable("Cwt", 0, 1e6)
-    Cba = pulp.LpVariable("Cba", 0, 1e6 if use_storage else 0)
-    Cct = pulp.LpVariable("Cct", 0, 1e6 if use_cold else 0)
+    Cpv = pulp.LpVariable("Cpv", 0, cfg.CpvMax)
+    Cwt = pulp.LpVariable("Cwt", 0, cfg.CwtMax)
+    Cba = pulp.LpVariable("Cba", 0, cfg.CbaMax if use_storage else 0)
+    Cct = pulp.LpVariable("Cct", 0, cfg.CctMax if use_cold else 0)
 
     if not use_storage:
         prob += Cba == 0
@@ -457,11 +463,11 @@ def _solve_one_gep_pulp(
     t0 = time.time()
     solver_name = cfg.solver.lower()
     if solver_name == "gurobi" and HAS_GUROBI:
-        solver = pulp.GUROBI_CMD(msg=0, timeLimit=cfg.time_limit, gapRel=cfg.mip_gap)
+        solver = pulp.GUROBI_CMD(msg=cfg.verbose, timeLimit=cfg.time_limit, gapRel=cfg.mip_gap)
     elif solver_name == "glpk":
-        solver = pulp.GLPK_CMD(msg=0)
+        solver = pulp.GLPK_CMD(msg=cfg.verbose)
     else:
-        solver = pulp.PULP_CBC_CMD(msg=0, timeLimit=cfg.time_limit, gapRel=cfg.mip_gap)
+        solver = pulp.PULP_CBC_CMD(msg=cfg.verbose, timeLimit=cfg.time_limit, gapRel=cfg.mip_gap)
 
     prob.solve(solver)
     solve_time = time.time() - t0
@@ -659,7 +665,7 @@ def solve_region(
 
     # Qch_cap_max
     use_flex = cfg.scenario == "S3"
-    Qch_cap_max = cfg.Qch_cap_max_S3 if use_flex else 1.5 * P_peak_IT_base
+    Qch_cap_max = cfg.Qch_cap_max_S3 if use_flex else cfg.chiller_cap_multiplier * P_peak_IT_base
 
     # Contracted demand & capacity fee (fixed, based on base peak)
     contracted_demand = 1.5 * P_peak_IT_base
