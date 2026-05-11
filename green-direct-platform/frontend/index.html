@@ -538,24 +538,21 @@ td.red { color: var(--red); }
                 <input class="form-input" id="proj-time-step" type="number" value="1" min="0.25" step="0.25">
               </div>
             </div>
+            <div class="grid2">
+              <div class="form-group">
+                <label class="form-label">典型日数量</label>
+                <input class="form-input" id="proj-typical-days" type="number" value="6" min="1" step="1">
+              </div>
+              <div class="form-group">
+                <label class="form-label">时间步长 (小时)</label>
+                <input class="form-input" id="proj-time-step" type="number" value="1" min="0.25" step="0.25">
+              </div>
+            </div>
             <div class="form-group">
               <label class="form-label">项目描述</label>
               <input class="form-input" id="proj-desc" placeholder="可选">
             </div>
             <div class="alert alert-info">项目创建仅填写名称、地区、年份等基础信息。电价、资源、负荷等详细参数请在「场景配置 / 资源诊断」模块中为选中的项目设置。</div>
-            <div class="form-group">
-              <label class="form-label">自定义 weather_info JSON（可选）</label>
-              <textarea class="form-input form-textarea" id="proj-weather-json" placeholder='留空使用省份内置数据；可填 {"temp_dry":[[...]],"temp_wet":[[...]],"solar_irradiance":[[...]],"wind_speed":[[...]],"typical_day_weight":[...],"grid_carbon_factor":[[...] ]}'></textarea>
-              <div class="help-text">接口文档要求 24×N 典型日矩阵；输入后将覆盖省份内置气象、资源与碳因子。</div>
-            </div>
-            <div class="form-group">
-              <label class="form-label">自定义 tariff_info JSON（可选）</label>
-              <textarea class="form-input form-textarea" id="proj-tariff-json" placeholder='留空使用省份内置电价；可填 {"grid_price":[...24小时...],"capacity_fee":35,"export_price":0.30,"currency":"CNY","tariff_name":"方案名"}'></textarea>
-            </div>
-            <div class="form-group">
-              <label class="form-label">自定义 load_info JSON（可选）</label>
-              <textarea class="form-input form-textarea" id="proj-load-json" placeholder='可填 {"it_load":[...24小时MW...],"load_profile":"raw","it_load_cap_s3":500,"chiller_cap_multiplier":1.5,"qch_cap_max_s3":750,"alpha":0.4,"flex_windows":[2,5,8,12]}'></textarea>
-            </div>
             <button class="btn btn-primary" onclick="createProject()" style="width:100%">创建项目</button>
           </div>
 
@@ -590,24 +587,24 @@ td.red { color: var(--red); }
               </select>
             </div>
             <div class="alert alert-info">在本模块设置当前项目的资源、电价与负荷详细参数；支持 Excel 导入和表格编辑。未设置时使用省份内置默认数据。</div>
-            <div style="font-size:12px; color:var(--accent); font-weight:600; margin:18px 0 10px">典型日气象输入（可选覆盖）</div>
-            <div class="grid2">
-              <div class="form-group">
-                <label class="form-label">干球温度 temp_dry JSON (°C)</label>
-                <textarea class="form-input form-textarea" id="proj-temp-dry-json" placeholder="24×N数组，如 [[-5,-2,...],[...]]；留空使用省份内置"></textarea>
-                <div class="help-text">MATLAB 原始输入 Tdb，对应天气文件 A1:F24，用于光伏温度修正。</div>
+            <details class="form-group">
+              <summary class="form-label" style="cursor:pointer">高级：JSON气象输入（建议优先使用下方表格/Excel）</summary>
+              <div class="grid2" style="margin-top:10px">
+                <div class="form-group">
+                  <label class="form-label">干球温度 temp_dry JSON (°C)</label>
+                  <textarea class="form-input form-textarea" id="proj-temp-dry-json" placeholder="24×N数组，如 [[-5,-2,...],[...]]；留空使用省份内置"></textarea>
+                  <div class="help-text">MATLAB 原始输入 Tdb，对应天气文件 A1:F24，用于光伏温度修正。</div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">湿球温度 temp_wet JSON (°C)</label>
+                  <textarea class="form-input form-textarea" id="proj-temp-wet-json" placeholder="24×N数组；留空使用省份内置"></textarea>
+                  <div class="help-text">MATLAB 原始输入 Twb，对应 H1:M24，用于计算制冷机 COP。</div>
+                </div>
               </div>
-              <div class="form-group">
-                <label class="form-label">湿球温度 temp_wet JSON (°C)</label>
-                <textarea class="form-input form-textarea" id="proj-temp-wet-json" placeholder="24×N数组；留空使用省份内置"></textarea>
-                <div class="help-text">MATLAB 原始输入 Twb，对应 H1:M24，用于计算制冷机 COP。</div>
-              </div>
-            </div>
-            <div class="form-group">
               <label class="form-label">完整 weather_info JSON（可选）</label>
               <textarea class="form-input form-textarea" id="proj-weather-json" placeholder='留空使用省份内置数据；可填 {"temp_dry":[[...]],"temp_wet":[[...]],"solar_irradiance":[[...]],"wind_speed":[[...]],"typical_day_weight":[...],"grid_carbon_factor":[[...] ]}'></textarea>
               <div class="help-text">原始 MATLAB 天气工作簿包含干球温度、湿球温度、太阳辐照度、风速、典型日权重和电网碳因子；这里可一次性覆盖全部字段。</div>
-            </div>
+            </details>
             <div class="form-group">
               <label class="form-label">表格化输入 / Excel导入（推荐）</label>
               <div class="input-toolbar">
@@ -714,16 +711,6 @@ td.red { color: var(--red); }
               <input class="form-input" id="sc-ramp" type="number" value="0.25" min="0" max="1" step="0.05">
             </div>
             <div style="font-size:12px; color:var(--accent); font-weight:600; margin:18px 0 10px">数据中心负荷特性（仿真输入）</div>
-            <div class="form-group">
-              <label class="form-label">负荷曲线模式</label>
-              <select class="form-select" id="sc-load-profile">
-                <option value="raw" selected>raw — 使用用户/省份24小时负荷</option>
-                <option value="flat">flat — 平稳负荷</option>
-                <option value="day_peak">day_peak — 日间高峰</option>
-                <option value="night_bias">night_bias — 夜间偏置</option>
-                <option value="dual_peak">dual_peak — 双峰负荷</option>
-              </select>
-            </div>
             <div class="grid2">
               <div class="form-group">
                 <label class="form-label">平均 IT 负荷 (MW)</label>
@@ -743,7 +730,7 @@ td.red { color: var(--red); }
             </div>
             <div class="form-group">
               <label class="form-label">24小时 IT 负荷曲线（可选 JSON，MW）</label>
-              <input class="form-input" id="sc-it-load-24h" placeholder="如 [280,270,...,300]；填写后优先于平均负荷">
+              <input class="form-input" id="sc-it-load-24h" placeholder="如 280,270,...,300（24个数）；也可用表格编辑 it_load">
             </div>
             <div class="grid3">
               <div class="form-group">
@@ -1249,10 +1236,17 @@ function parseNumberOrNull(id) {
 }
 
 function parseOptionalHourlyLoad(id) {
-  const values = parseOptionalJson(id, '24小时IT负荷曲线');
-  if(values == null) return null;
+  const el = document.getElementById(id);
+  const raw = (el?.value || '').trim();
+  if(!raw) return null;
+  let values;
+  if(raw.startsWith('[')) {
+    values = parseOptionalJson(id, '24小时IT负荷曲线');
+  } else {
+    values = raw.split(/[，,\s]+/).filter(Boolean).map(Number);
+  }
   if(!Array.isArray(values) || values.length !== 24) {
-    throw new Error('24小时IT负荷曲线必须是长度为24的JSON数组');
+    throw new Error('24小时IT负荷曲线必须是24个数字，可用逗号分隔或JSON数组');
   }
   values.forEach((v, i) => {
     if(typeof v !== 'number' || !Number.isFinite(v) || v < 0) {
@@ -1493,14 +1487,6 @@ async function createProject() {
   if(!name||!province_key) return alert('请填写项目名称并选择省份');
   try {
     const proj = await api('POST', '/api/projects', {name, province_key, region_name, data_year, typical_day_count, time_step_hours});
-    const weather_info = parseOptionalJson('proj-weather-json', 'weather_info');
-    const tariff_info = parseOptionalJson('proj-tariff-json', 'tariff_info');
-    const load_info = parseOptionalJson('proj-load-json', 'load_info');
-    const payload = {name, province_key, region_name, data_year, typical_day_count, time_step_hours};
-    if(weather_info) payload.weather_info = weather_info;
-    if(tariff_info) payload.tariff_info = tariff_info;
-    if(load_info) payload.load_info = load_info;
-    const proj = await api('POST', '/api/projects', payload);
     state.projects.push(proj);
     state.currentProject = proj;
     renderProjectList();
@@ -1564,7 +1550,10 @@ function renderProjectList() {
       </div>
       <div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end">
         <button class="btn btn-outline" style="font-size:11px;padding:4px 8px" onclick="selectProject('${p.id}');showPage('scenario')">参数设置</button>
-        <button class="btn btn-outline" style="font-size:11px;padding:4px 8px" onclick="viewProjectLatestResults('${p.id}')">查看结果</button>
+        <button class="btn btn-outline" style="font-size:11px;padding:4px 8px" onclick="openProjectAnalysis('${p.id}','results')">结果</button>
+        <button class="btn btn-outline" style="font-size:11px;padding:4px 8px" onclick="openProjectAnalysis('${p.id}','dispatch')">调度</button>
+        <button class="btn btn-outline" style="font-size:11px;padding:4px 8px" onclick="openProjectAnalysis('${p.id}','investment')">投资</button>
+        <button class="btn btn-outline" style="font-size:11px;padding:4px 8px" onclick="openProjectAnalysis('${p.id}','sensitivity')">敏感度</button>
         <span class="badge badge-blue">${state.currentProject?.id===p.id?'当前':'项目'}</span>
       </div>
     </div>`).join('') + `
@@ -1583,12 +1572,22 @@ async function findLatestCompletedRun(projectId) {
   return runs.filter(r=>r.status==='completed').sort((a,b)=>(b.finished_at||b.created_at||'').localeCompare(a.finished_at||a.created_at||''))[0];
 }
 
-async function viewProjectLatestResults(projectId) {
+async function openProjectAnalysis(projectId, page='results') {
   try {
+    selectProject(projectId);
     const run = await findLatestCompletedRun(projectId);
     if(!run) return alert('该项目暂无已完成仿真，请先运行优化仿真');
-    await loadResults(run.id);
-  } catch(e) { alert('加载项目结果失败: '+e.message); }
+    const data = await api('GET', '/api/runs/'+run.id+'/results');
+    state.currentRunId = run.id;
+    state.scanResults = data.scan_result;
+    state.bestPoints = data.best_points;
+    updateHomeMetrics();
+    showPage(page);
+  } catch(e) { alert('加载项目分析失败: '+e.message); }
+}
+
+async function viewProjectLatestResults(projectId) {
+  return openProjectAnalysis(projectId, 'results');
 }
 
 function loadProjectInputsToEditor(project) {
@@ -1675,11 +1674,6 @@ async function submitScenario() {
     data_center_load: dataCenterLoad,
     flex_windows: flexWindows,
     gep_targets: gepTargets,
-    it_load_cap_s3: parseFloat(document.getElementById('sc-it-cap').value)||500,
-    qch_cap_max_s3: parseFloat(document.getElementById('sc-qch-cap').value)||750,
-    load_profile: document.getElementById('sc-load-profile').value,
-    flex_windows: parseOptionalJson('sc-flex-windows', 'flex_windows') || [2,5,8,12],
-    gep_targets: parseOptionalJson('sc-gep-targets', 'gep_targets'),
     write_dispatch: document.getElementById('sc-dispatch').value === 'true',
     pg_zero_tol: parseFloat(document.getElementById('sc-pg-zero').value)||1e-6,
     grid_zero_tol_annual: parseFloat(document.getElementById('sc-grid-zero').value)||1e-6,
@@ -1696,7 +1690,6 @@ async function submitScenario() {
       verbose: parseInt(document.getElementById('sc-verbose').value)||0,
     },
     device_param: deviceParam,
-    device_param: parseOptionalJson('sc-device-json', 'device_param'),
     cap_cost_pv: parseNumberOrNull('sc-pv-cost'),
     cap_cost_wt: parseNumberOrNull('sc-wt-cost'),
     cap_cost_ba: parseNumberOrNull('sc-ba-cost'),
