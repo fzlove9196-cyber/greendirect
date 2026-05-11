@@ -556,6 +556,7 @@ td.red { color: var(--red); }
               <label class="form-label">仿真方案</label>
               <select class="form-select" id="sc-type" onchange="updateScenarioUI()">
                 <option value="S1">S1 — 基础储能方案（风光 + 电池）</option>
+                <option value="S2">S2 — 储冷增强方案（风光 + 电池 + 蓄冷）</option>
                 <option value="S3" selected>S3 — 算电冷协同方案（风光 + 电池 + 蓄冷 + 算力时移）</option>
               </select>
             </div>
@@ -569,10 +570,20 @@ td.red { color: var(--red); }
             <div class="form-group">
               <label class="form-label">政策场景</label>
               <select class="form-select" id="sc-policy">
-                <option value="A" selected>政策A — 标准场景</option>
-                <option value="B">政策B — 严格上网限制</option>
-                <option value="C">政策C — 激进绿电补贴</option>
+                <option value="A" selected>政策A — 无新增约束/不上网</option>
+                <option value="B">政策B — 弃电率上限</option>
+                <option value="C">政策C — 弃电率上限 + 上网比例上限</option>
               </select>
+            </div>
+            <div class="grid2">
+              <div class="form-group">
+                <label class="form-label">弃电率上限 (B/C)</label>
+                <input class="form-input" id="sc-curt-limit" type="number" value="0.40" min="0" max="1" step="0.01">
+              </div>
+              <div class="form-group">
+                <label class="form-label">上网比例上限 (C)</label>
+                <input class="form-input" id="sc-export-limit" type="number" value="0.20" min="0" max="1" step="0.01">
+              </div>
             </div>
           </div>
 
@@ -598,6 +609,16 @@ td.red { color: var(--red); }
             <div class="form-group">
               <label class="form-label">负荷平滑权重 ρ</label>
               <input class="form-input" id="sc-ramp" type="number" value="0.25" min="0" max="1" step="0.05">
+            </div>
+            <div class="grid2">
+              <div class="form-group">
+                <label class="form-label">S3 IT负荷上限 (MW)</label>
+                <input class="form-input" id="sc-it-cap" type="number" value="500" min="1" step="10">
+              </div>
+              <div class="form-group">
+                <label class="form-label">S3制冷机上限 (MW_th)</label>
+                <input class="form-input" id="sc-qch-cap" type="number" value="750" min="1" step="10">
+              </div>
             </div>
             <div class="form-group">
               <label class="form-label">输出调度明细</label>
@@ -1073,28 +1094,31 @@ function updateProvinceName() {
 let tariffChart = null;
 async function loadTariffPreview(key) {
   if(!key) return;
-  // Show mock tariff info from known data
-  const names = { Prov1:'内蒙古', Prov9:'上海', Prov11:'浙江' };
-  document.getElementById('tariff-preview').innerHTML = `
-    <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px">
-      <div><div class="metric-label">峰时电价</div><div style="font-size:14px; color:var(--accent)">0.600 ¥/kWh</div></div>
-      <div><div class="metric-label">谷时电价</div><div style="font-size:14px; color:var(--accent2)">0.261 ¥/kWh</div></div>
-      <div><div class="metric-label">容量电费</div><div style="font-size:14px">32.8 ¥/kW/月</div></div>
-      <div><div class="metric-label">上网电价</div><div style="font-size:14px">0.283 ¥/kWh</div></div>
-    </div>`;
+  try {
+    const data = await api('GET', `/api/provinces/${key}/data`);
+    const t = data.tariff_info;
+    document.getElementById('tariff-preview').innerHTML = `
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px">
+        <div><div class="metric-label">峰时电价</div><div style="font-size:14px; color:var(--accent)">${t.max_price.toFixed(3)} ¥/kWh</div></div>
+        <div><div class="metric-label">谷时电价</div><div style="font-size:14px; color:var(--accent2)">${t.min_price.toFixed(3)} ¥/kWh</div></div>
+        <div><div class="metric-label">容量电费</div><div style="font-size:14px">${t.capacity_fee.toFixed(1)} ¥/kW/月</div></div>
+        <div><div class="metric-label">上网电价</div><div style="font-size:14px">${t.export_price.toFixed(3)} ¥/kWh</div></div>
+      </div>`;
 
-  // Draw tariff chart
-  document.getElementById('tariff-chart-wrap').style.display = 'block';
-  const price = [0.261,0.261,0.261,0.261,0.408,0.408,0.600,0.600,0.408,0.408,0.408,0.261,0.261,0.261,0.261,0.261,0.408,0.408,0.600,0.600,0.600,0.600,0.408,0.408];
-  destroyChart('tariff-chart');
-  state.chartInstances['tariff-chart'] = new Chart(document.getElementById('tariff-chart'), {
-    type:'bar',
-    data:{
-      labels: Array.from({length:24},(_,i)=>i+'h'),
-      datasets:[{label:'分时电价(¥/kWh)', data:price, backgroundColor:price.map(v=>v>0.5?'#ff6b35':v>0.35?'#ffd600':'#00c8ff'), borderRadius:2}]
-    },
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{min:0,max:0.7,grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#8ab4d4',font:{size:10}}},x:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#8ab4d4',font:{size:9}}}}}
-  });
+    document.getElementById('tariff-chart-wrap').style.display = 'block';
+    const price = t.grid_price;
+    destroyChart('tariff-chart');
+    state.chartInstances['tariff-chart'] = new Chart(document.getElementById('tariff-chart'), {
+      type:'bar',
+      data:{
+        labels: Array.from({length:24},(_,i)=>i+'h'),
+        datasets:[{label:'分时电价(¥/kWh)', data:price, backgroundColor:price.map(v=>v>t.avg_price*1.15?'#ff6b35':v<t.avg_price*0.85?'#00c8ff':'#ffd600'), borderRadius:2}]
+      },
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{min:0,grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#8ab4d4',font:{size:10}}},x:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#8ab4d4',font:{size:9}}}}}
+    });
+  } catch(e) {
+    document.getElementById('tariff-preview').innerHTML = '<div style="color:var(--red)">电价数据加载失败，请确认后端已启动</div>';
+  }
 }
 
 // ══════════════════════════════════════════════
@@ -1168,6 +1192,11 @@ async function submitScenario() {
     gep_end: parseFloat(document.getElementById('sc-gep-end').value)||1,
     gep_step: parseFloat(document.getElementById('sc-gep-step').value)||0.05,
     ramp_weight: parseFloat(document.getElementById('sc-ramp').value)||0.25,
+    curt_rate_limit: parseFloat(document.getElementById('sc-curt-limit').value)||0.40,
+    export_ratio_limit: parseFloat(document.getElementById('sc-export-limit').value)||0.20,
+    it_load_cap_s3: parseFloat(document.getElementById('sc-it-cap').value)||500,
+    qch_cap_max_s3: parseFloat(document.getElementById('sc-qch-cap').value)||750,
+    flex_windows: [2,5,8,12],
     write_dispatch: document.getElementById('sc-dispatch').value === 'true',
     cap_cost_pv: parseFloat(document.getElementById('sc-pv-cost').value)||null,
     cap_cost_wt: parseFloat(document.getElementById('sc-wt-cost').value)||null,
@@ -1373,7 +1402,10 @@ function drawScanTable() {
       <td class="green">${r.lcoe_it!=null?r.lcoe_it.toFixed(4):'--'}</td>
       <td>${r.lcoe_total!=null?r.lcoe_total.toFixed(4):'--'}</td>
       <td>${r.curt_rate!=null?(r.curt_rate*100).toFixed(1)+'%':'--'}</td>
+      <td>${r.export_annual!=null?r.export_annual.toFixed(0):'--'}</td>
+      <td>${r.carbon_total!=null?(r.carbon_total/10000).toFixed(1):'--'}</td>
       <td>${r.pue!=null?r.pue.toFixed(2):'--'}</td>
+      <td>${r.BESS_EFC_annual!=null?r.BESS_EFC_annual.toFixed(1):'--'}</td>
       <td class="${!r.feasible?'red':''}">${r.feasible?'✓':'✗'}</td>
     </tr>`;
   }).join('');
@@ -1381,7 +1413,7 @@ function drawScanTable() {
     <table>
       <thead><tr>
         <th>GEP目标</th><th>实际GEP</th><th>光伏MW</th><th>风电MW</th><th>电池MWh</th><th>蓄冷MWh_th</th>
-        <th>LCOE_IT</th><th>LCOE_总</th><th>弃电率</th><th>PUE</th><th>可行</th>
+        <th>LCOE_IT</th><th>LCOE_总</th><th>弃电率</th><th>上网MWh</th><th>碳排万kg</th><th>PUE</th><th>BESS EFC</th><th>可行</th>
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>`;
@@ -1417,6 +1449,8 @@ function loadDispatchChart() {
   const pbac = extract(d.pba_c, dayIdx);
   const pbad = extract(d.pba_d, dayIdx);
   const ld   = extract(d.ld_it, dayIdx);
+  const pch  = extract(d.pch_total, dayIdx);
+  const pexp = extract(d.pexp, dayIdx);
   const eba  = extract(d.eba, dayIdx);
 
   destroyChart('dispatch-chart');
@@ -1429,6 +1463,8 @@ function loadDispatchChart() {
     <div class="dispatch-legend-item"><div class="legend-dot" style="background:#ff6b35"></div>购网电</div>
     <div class="dispatch-legend-item"><div class="legend-dot" style="background:#00ff9d"></div>电池放电</div>
     <div class="dispatch-legend-item"><div class="legend-dot" style="background:#b388ff"></div>电池充电</div>
+    <div class="dispatch-legend-item"><div class="legend-dot" style="background:#ff4d4d"></div>上网</div>
+    <div class="dispatch-legend-item"><div class="legend-dot" style="background:#66e0ff"></div>制冷耗电</div>
     <div class="dispatch-legend-item"><div class="legend-dot" style="background:#fff"></div>IT负荷</div>`;
 
   state.chartInstances['dispatch-chart'] = new Chart(document.getElementById('dispatch-chart'), {
@@ -1441,7 +1477,9 @@ function loadDispatchChart() {
         {label:'购网电',data:pg,backgroundColor:'rgba(255,107,53,0.6)',stack:'supply'},
         {label:'电池放电',data:pbad,backgroundColor:'rgba(0,255,157,0.6)',stack:'supply'},
         {label:'电池充电',data:pbac.map(v=>-v),backgroundColor:'rgba(179,136,255,0.6)',stack:'supply'},
+        {label:'上网',data:pexp.map(v=>-v),backgroundColor:'rgba(255,77,77,0.45)',stack:'supply'},
         {type:'line',label:'IT负荷',data:ld,borderColor:'#fff',borderWidth:2,pointRadius:2,fill:false,tension:0.3,stack:undefined},
+        {type:'line',label:'制冷耗电',data:pch,borderColor:'#66e0ff',borderWidth:2,borderDash:[5,3],pointRadius:2,fill:false,tension:0.3,stack:undefined},
       ]
     },
     options:{responsive:true,maintainAspectRatio:false,
@@ -1636,14 +1674,19 @@ async function loadResourceDiag() {
   document.getElementById('resource-content').textContent = '加载中...';
   document.getElementById('resource-charts').style.display='block';
 
-  // We'll compute diagnostics from province_data via backend proxy
-  // For now use static representation based on available data pattern
-  const hours = Array.from({length:24},(_,i)=>i+'h');
+  let data;
+  try {
+    data = await api('GET', `/api/provinces/${key}/data`);
+  } catch(e) {
+    document.getElementById('resource-content').innerHTML = '<span style="color:var(--red)">资源数据加载失败，请确认后端已启动</span>';
+    document.getElementById('resource-charts').style.display='none';
+    return;
+  }
 
-  // Solar (sample from Prov1)
-  const solar = [0,0,0,0,0,24,183,394,604,778,884,940,958,876,743,576,381,195,41,0,0,0,0,0];
-  const wind = [5.6,5.5,5.2,4.9,4.7,4.5,5.0,5.3,5.4,5.8,6.5,7.1,7.6,7.9,8.0,8.0,7.8,7.4,6.3,5.6,5.4,5.4,5.5,5.6];
-  const ef = [0.037,0.036,0.036,0.036,0.035,0.033,0.028,0.025,0.024,0.020,0.017,0.013,0.011,0.009,0.010,0.010,0.008,0.007,0.006,0.006,0.006,0.006,0.006,0.005];
+  const hours = Array.from({length:24},(_,i)=>i+'h');
+  const solar = data.weather_summary.solar_hourly_avg;
+  const wind = data.weather_summary.wind_hourly_avg;
+  const ef = data.weather_summary.carbon_factor_hourly_avg;
 
   destroyChart('solar-chart');
   destroyChart('wind-chart');
@@ -1655,11 +1698,8 @@ async function loadResourceDiag() {
   state.chartInstances['wind-chart'] = new Chart(document.getElementById('wind-chart'), {type:'line',data:{labels:hours,datasets:[{data:wind,borderColor:'#00c8ff',backgroundColor:'rgba(0,200,255,0.1)',fill:true,tension:0.4,pointRadius:2}]},options:{...chartOpts}});
   state.chartInstances['ef-chart'] = new Chart(document.getElementById('ef-chart'), {type:'line',data:{labels:hours,datasets:[{data:ef,borderColor:'#ff6b35',backgroundColor:'rgba(255,107,53,0.1)',fill:true,tension:0.4,pointRadius:2}]},options:{...chartOpts}});
 
-  // Score
-  const maxSolar = Math.max(...solar);
-  const avgWind = wind.reduce((a,v)=>a+v)/24;
-  const solarScore = Math.min(100, Math.round(maxSolar/10));
-  const windScore = Math.min(100, Math.round(avgWind*8));
+  const solarScore = data.weather_summary.solar_score;
+  const windScore = data.weather_summary.wind_score;
   const overallScore = Math.round((solarScore+windScore)/2);
   document.getElementById('resource-score').innerHTML = `
     <div style="margin-bottom:12px">
@@ -1671,7 +1711,7 @@ async function loadResourceDiag() {
       <div class="progress-bar"><div class="progress-fill" style="width:${windScore}%;background:linear-gradient(90deg,var(--accent),var(--accent2))"></div></div>
     </div>
     <div style="margin-top:16px;padding:12px;background:var(--bg3);border-radius:var(--radius);border-left:3px solid ${overallScore>70?'var(--accent2)':overallScore>50?'var(--yellow)':'var(--red)'}">
-      <div style="font-size:11px;color:var(--text3)">综合可行性评分</div>
+      <div style="font-size:11px;color:var(--text3)">${data.name} 综合可行性评分</div>
       <div style="font-size:24px;font-weight:700;color:${overallScore>70?'var(--accent2)':overallScore>50?'var(--yellow)':'var(--red)'}">${overallScore}<span style="font-size:13px;font-weight:400"> / 100</span></div>
       <div style="font-size:12px;color:var(--text2);margin-top:4px">${overallScore>70?'资源条件优良，适合绿电直连项目':overallScore>50?'资源条件一般，建议详细评估':'资源条件较差，需谨慎规划'}</div>
     </div>`;

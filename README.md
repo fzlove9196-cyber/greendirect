@@ -42,6 +42,33 @@ python -m http.server 3000
 # 浏览器访问 http://localhost:3000
 ```
 
+
+## 依赖安装 403 Forbidden 排查
+
+如果执行 `pip install -r backend/requirements.txt` 时出现 `Tunnel connection failed: 403 Forbidden`，通常是当前网络代理或包索引禁止访问默认 PyPI，并非项目代码错误。可按环境选择：
+
+```bash
+# 方案 A：使用可访问的 PyPI 镜像（国内网络常用）
+cd green-direct-platform/backend
+python3 -m pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+
+# 方案 B：设置为当前 shell 的默认包索引后再启动
+export PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
+bash start.sh
+
+# 方案 C：企业代理环境下显式设置代理
+export HTTPS_PROXY=http://<proxy-host>:<proxy-port>
+export HTTP_PROXY=http://<proxy-host>:<proxy-port>
+python3 -m pip install -r requirements.txt
+```
+
+若部署环境完全离线，请在有网机器下载 wheel 包：
+
+```bash
+python3 -m pip download -r requirements.txt -d wheelhouse
+python3 -m pip install --no-index --find-links=wheelhouse -r requirements.txt
+```
+
 ## 核心功能
 
 | 模块 | 功能 |
@@ -62,6 +89,7 @@ python -m http.server 3000
 基于 PuLP/Gurobi 的 MILP 混合整数线性规划：
 
 - **S1方案**：风光 + 电池储能（含 CRF 年化成本、GEP 约束）
+- **S2方案**：风光 + 电池 + 蓄冷（含 COP、蓄冷 SOC 与制冷电耗）
 - **S3方案**：风光 + 电池 + 蓄冷 + IT 算力时间转移（α参数）
 - **GEP扫描**：对 0%→100% 绿电占比逐档求解，识别 LCOE 拐点
 - **目标函数**：最小化年化总成本（含 CAPEX/OPEX/电费/弃电/容量电费）
@@ -71,21 +99,25 @@ python -m http.server 3000
 
 ```
 GET  /api/provinces                  # 获取31省列表
+GET  /api/provinces/{key}/data       # 获取省份资源/电价摘要
 POST /api/projects                   # 创建项目
 GET  /api/projects                   # 项目列表
 POST /api/scenarios/run              # 创建场景并启动仿真
 GET  /api/runs/{id}/status           # 查询仿真状态（轮询）
-GET  /api/runs/{id}/results          # 获取完整结果
-GET  /api/runs/{id}/dispatch         # 获取调度明细
+GET  /api/runs/{id}/results          # 获取完整结果（run_meta/scan_result/best_points/metric_series）
+GET  /api/runs/{id}/dispatch         # 获取调度明细（24×6矩阵 + 逐小时detail）
+GET  /api/interface-schema           # 获取输入输出接口对象Schema
 POST /api/sensitivity                # 敏感性分析
 GET  /api/health                     # 健康检查
 ```
 
 ## 数据说明
 
-- **31省气象数据**：干球/湿球温度、太阳辐照度、风速，6个典型日 × 24小时
-- **电价数据**：分时电价（¥/kWh）、容量电费（¥/kW/月）、上网电价
-- **碳因子**：电网排放因子（kgCO₂/kWh），随时段和典型日变化
+- **31省气象数据**：干球/湿球温度、太阳辐照度、风速，6个典型日 × 24小时；也支持项目级 `weather_info` 覆盖。
+- **电价数据**：分时电价（¥/kWh）、容量电费（¥/kW/月）、上网电价；也支持项目级 `tariff_info` 覆盖。
+- **负荷数据**：支持 `load_info.it_load` 传入24小时IT基准负荷，并支持S3负荷上限、制冷机上限与时移窗口。
+- **碳因子**：电网排放因子（kgCO₂/kWh），随时段和典型日变化。
+- **输出对象**：结果按接口文档拆分为 `run_meta`、`scan_result`、`best_points`、`metric_series` 与 `dispatch_detail`。
 
 ## 技术栈
 

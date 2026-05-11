@@ -82,6 +82,8 @@ class OptimizerConfig:
     cap_cost_ct: float = 222_000     # ¥/MWh_th
     om_pv: float = 70_000            # ¥/MW/yr
     om_wt: float = 100_000
+    om_rate_ba: float = 0.005
+    om_rate_ct: float = 0.007
     lineCapex: float = 2e8
     eta_ba: float = 0.95
     p_ratio_ba: float = 0.2
@@ -151,7 +153,18 @@ class GEPResult:
     Eba_mat: Optional[np.ndarray] = None
     Ld_IT_mat: Optional[np.ndarray] = None
     Pch_tot_mat: Optional[np.ndarray] = None
+    Pch_dir_mat: Optional[np.ndarray] = None
+    Pch_charge_mat: Optional[np.ndarray] = None
+    Qch_dir_mat: Optional[np.ndarray] = None
+    Qct_c_mat: Optional[np.ndarray] = None
     Qct_d_mat: Optional[np.ndarray] = None
+    Ect_mat: Optional[np.ndarray] = None
+    Pexp_mat: Optional[np.ndarray] = None
+    Ppv_avail_mat: Optional[np.ndarray] = None
+    Pwt_avail_mat: Optional[np.ndarray] = None
+    Shift_out_mat: Optional[np.ndarray] = None
+    Shift_in_mat: Optional[np.ndarray] = None
+    COP_mat: Optional[np.ndarray] = None
     solve_time: float = 0
 
 
@@ -293,6 +306,9 @@ def _solve_one_gep_pulp(
     Qct_d   = mkvar2d("Qct_d", 0)
     Ect     = mkvar2d("Ect", 0)
 
+    Shift_total = None
+    Received = None
+
     # ── IT load after shift ──
     if use_flex:
         nb = len(cfg.flex_windows)
@@ -422,8 +438,8 @@ def _solve_one_gep_pulp(
     # ── Cost components ──
     Cost_PV   = (CRF_pv * cfg.cap_cost_pv + cfg.om_pv) * Cpv
     Cost_WT   = (CRF_wt * cfg.cap_cost_wt + cfg.om_wt) * Cwt
-    Cost_BA   = (CRF_ba * cfg.cap_cost_ba + 0.005 * cfg.cap_cost_ba) * Cba
-    Cost_CT   = (CRF_ct * cfg.cap_cost_ct + 0.007 * cfg.cap_cost_ct) * Cct
+    Cost_BA   = (CRF_ba * cfg.cap_cost_ba + cfg.om_rate_ba * cfg.cap_cost_ba) * Cba
+    Cost_CT   = (CRF_ct * cfg.cap_cost_ct + cfg.om_rate_ct * cfg.cap_cost_ct) * Cct
     Cost_Line = CRF_line * cfg.lineCapex   # fixed (no binary in LP)
 
     grid_energy_cost = pulp.lpSum(td.price_MWh[t] * Pg[t][j] * w[j]
@@ -470,11 +486,20 @@ def _solve_one_gep_pulp(
     Qch_dir_mat = np.array([[val(Qch_dir[t][j]) for j in range(n_day)] for t in range(T)])
     Qct_c_mat   = np.array([[val(Qct_c[t][j])   for j in range(n_day)] for t in range(T)])
     Qct_d_mat   = np.array([[val(Qct_d[t][j])   for j in range(n_day)] for t in range(T)])
+    Ect_mat     = np.array([[val(Ect[t][j])     for j in range(n_day)] for t in range(T)])
+    Pexp_mat    = np.array([[val(Pexp[t][j])    for j in range(n_day)] for t in range(T)])
     if use_flex:
+        Shift_out_mat = np.array([[val(Shift_total[t][j]) for j in range(n_day)] for t in range(T)])
+        Shift_in_mat = np.array([[val(Received[t][j]) for j in range(n_day)] for t in range(T)])
         Ld_mat = np.array([[(1-cfg.alpha)*Pd_24x6[t,j]+val(Received[t][j]) for j in range(n_day)] for t in range(T)])
     else:
+        Shift_out_mat = np.zeros((T, n_day))
+        Shift_in_mat = np.zeros((T, n_day))
         Ld_mat = Pd_24x6.copy()
 
+    Ppv_avail_mat = kp * Cpv_v
+    Pwt_avail_mat = cf * Cwt_v
+    COP_mat = 1.0 / np.maximum(invCOP, 1e-9)
     Pch_dir_mat = Qch_dir_mat * invCOP
     Pch_ct_mat  = Qct_c_mat  * invCOP
     Pch_tot_mat = Pch_dir_mat + Pch_ct_mat
@@ -484,7 +509,7 @@ def _solve_one_gep_pulp(
     chiller_an_v = float(np.sum(np.sum(Pch_tot_mat, axis=0) * w))
     total_an_v   = IT_an_v + chiller_an_v
     grid_an_v    = float(np.sum(np.sum(Pg_mat, axis=0) * w))
-    export_an_v  = 0.0   # policy A
+    export_an_v  = float(np.sum(np.sum(Pexp_mat, axis=0) * w))
     pv_pot_an_v  = float(np.sum(np.sum(kp * Cpv_v, axis=0) * w))
     wt_pot_an_v  = float(np.sum(np.sum(cf * Cwt_v, axis=0) * w))
     pv_used_an_v = float(np.sum(np.sum(Ppv_mat, axis=0) * w))
@@ -504,23 +529,24 @@ def _solve_one_gep_pulp(
     # Cost breakdown
     c_pv_v  = (CRF_pv * cfg.cap_cost_pv + cfg.om_pv) * Cpv_v
     c_wt_v  = (CRF_wt * cfg.cap_cost_wt + cfg.om_wt) * Cwt_v
-    c_ba_v  = (CRF_ba * cfg.cap_cost_ba + 0.005*cfg.cap_cost_ba) * Cba_v
-    c_ct_v  = (CRF_ct * cfg.cap_cost_ct + 0.007*cfg.cap_cost_ct) * Cct_v
+    c_ba_v  = (CRF_ba * cfg.cap_cost_ba + cfg.om_rate_ba*cfg.cap_cost_ba) * Cba_v
+    c_ct_v  = (CRF_ct * cfg.cap_cost_ct + cfg.om_rate_ct*cfg.cap_cost_ct) * Cct_v
     c_line_v = CRF_line * cfg.lineCapex
     grid_e_v = float(np.sum(td.price_MWh[:, np.newaxis] * Pg_mat * w[np.newaxis, :]))
-    exp_rev_v = 0.0
+    exp_rev_v = td.export_MWh * export_an_v
     cap_fee_v = capacityfee_fixed
     obj_cost_v = c_pv_v + c_wt_v + c_ba_v + c_ct_v + c_line_v + grid_e_v + cap_fee_v - exp_rev_v
 
-    LCOE_IT_v    = obj_cost_v / max(IT_an_v * 1000, 1) / 1000  # ¥/kWh (IT_an in MWh → *1000 kWh)
-    LCOE_total_v = obj_cost_v / max(total_an_v * 1000, 1) / 1000
-    LCOE_pv_v    = c_pv_v / max(pv_used_an_v * 1000, 1) / 1000
-    LCOE_wt_v    = c_wt_v / max(wt_used_an_v * 1000, 1) / 1000
+    # Annual energy is in MWh; multiply by 1000 to convert denominator to kWh.
+    LCOE_IT_v    = obj_cost_v / max(IT_an_v * 1000, 1)  # ¥/kWh
+    LCOE_total_v = obj_cost_v / max(total_an_v * 1000, 1)
+    LCOE_pv_v    = c_pv_v / max(pv_used_an_v * 1000, 1)
+    LCOE_wt_v    = c_wt_v / max(wt_used_an_v * 1000, 1)
 
     capex_v  = (CRF_pv*cfg.cap_cost_pv*Cpv_v + CRF_wt*cfg.cap_cost_wt*Cwt_v +
                 CRF_ba*cfg.cap_cost_ba*Cba_v + CRF_ct*cfg.cap_cost_ct*Cct_v + CRF_line*cfg.lineCapex)
     opex_v   = (cfg.om_pv*Cpv_v + cfg.om_wt*Cwt_v +
-                0.005*cfg.cap_cost_ba*Cba_v + 0.007*cfg.cap_cost_ct*Cct_v + grid_e_v + cap_fee_v)
+                cfg.om_rate_ba*cfg.cap_cost_ba*Cba_v + cfg.om_rate_ct*cfg.cap_cost_ct*Cct_v + grid_e_v + cap_fee_v)
 
     total_cost_v = obj_cost_v
     s_pv  = c_pv_v  / max(total_cost_v, 1e-9)
@@ -581,7 +607,18 @@ def _solve_one_gep_pulp(
         Eba_mat=Eba_mat if write_dispatch else None,
         Ld_IT_mat=Ld_mat if write_dispatch else None,
         Pch_tot_mat=Pch_tot_mat if write_dispatch else None,
+        Pch_dir_mat=Pch_dir_mat if write_dispatch else None,
+        Pch_charge_mat=Pch_ct_mat if write_dispatch else None,
+        Qch_dir_mat=Qch_dir_mat if write_dispatch else None,
+        Qct_c_mat=Qct_c_mat if write_dispatch else None,
         Qct_d_mat=Qct_d_mat if write_dispatch else None,
+        Ect_mat=Ect_mat if write_dispatch else None,
+        Pexp_mat=Pexp_mat if write_dispatch else None,
+        Ppv_avail_mat=Ppv_avail_mat if write_dispatch else None,
+        Pwt_avail_mat=Pwt_avail_mat if write_dispatch else None,
+        Shift_out_mat=Shift_out_mat if write_dispatch else None,
+        Shift_in_mat=Shift_in_mat if write_dispatch else None,
+        COP_mat=COP_mat if write_dispatch else None,
     )
     return r
 

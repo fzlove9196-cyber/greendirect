@@ -13,12 +13,14 @@ if ! command -v python3 &> /dev/null; then
 fi
 
 # Install dependencies
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 echo "📦 安装依赖..."
-pip install fastapi uvicorn pydantic numpy pulp python-multipart -q
+echo "   如默认 PyPI 访问受限，可先设置: export PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple"
+python3 -m pip install -r "$SCRIPT_DIR/requirements.txt"
 
 # Start server
 echo "🚀 启动后端服务 → http://localhost:8000"
 echo "📚 API文档 → http://localhost:8000/docs"
 echo ""
-cd "$(dirname "$0")"
+cd "$SCRIPT_DIR"
 python3 -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
