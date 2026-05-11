@@ -183,6 +183,8 @@ body {
 }
 .form-input:focus, .form-select:focus { border-color: var(--accent); }
 .form-select option { background: var(--bg3); }
+.form-textarea { min-height: 92px; resize: vertical; font-family: var(--mono); line-height: 1.45; }
+.help-text { font-size: 11px; color: var(--text3); margin-top: 4px; line-height: 1.45; }
 
 /* BUTTONS */
 .btn {
@@ -507,13 +509,32 @@ td.red { color: var(--red); }
               <label class="form-label">地区名称</label>
               <input class="form-input" id="proj-region" placeholder="如：甘肃某园区">
             </div>
-            <div class="form-group">
-              <label class="form-label">数据年份</label>
-              <input class="form-input" id="proj-year" type="number" value="2025">
+            <div class="grid2">
+              <div class="form-group">
+                <label class="form-label">典型日数量</label>
+                <input class="form-input" id="proj-typical-days" type="number" value="6" min="1" step="1">
+              </div>
+              <div class="form-group">
+                <label class="form-label">时间步长 (小时)</label>
+                <input class="form-input" id="proj-time-step" type="number" value="1" min="0.25" step="0.25">
+              </div>
             </div>
             <div class="form-group">
               <label class="form-label">项目描述</label>
               <input class="form-input" id="proj-desc" placeholder="可选">
+            </div>
+            <div class="form-group">
+              <label class="form-label">自定义 weather_info JSON（可选）</label>
+              <textarea class="form-input form-textarea" id="proj-weather-json" placeholder='留空使用省份内置数据；可填 {"temp_dry":[[...]],"temp_wet":[[...]],"solar_irradiance":[[...]],"wind_speed":[[...]],"typical_day_weight":[...],"grid_carbon_factor":[[...] ]}'></textarea>
+              <div class="help-text">接口文档要求 24×N 典型日矩阵；输入后将覆盖省份内置气象、资源与碳因子。</div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">自定义 tariff_info JSON（可选）</label>
+              <textarea class="form-input form-textarea" id="proj-tariff-json" placeholder='留空使用省份内置电价；可填 {"grid_price":[...24小时...],"capacity_fee":35,"export_price":0.30,"currency":"CNY","tariff_name":"方案名"}'></textarea>
+            </div>
+            <div class="form-group">
+              <label class="form-label">自定义 load_info JSON（可选）</label>
+              <textarea class="form-input form-textarea" id="proj-load-json" placeholder='可填 {"it_load":[...24小时MW...],"load_profile":"raw","it_load_cap_s3":500,"chiller_cap_multiplier":1.5,"qch_cap_max_s3":750,"alpha":0.4,"flex_windows":[2,5,8,12]}'></textarea>
             </div>
             <button class="btn btn-primary" onclick="createProject()" style="width:100%">创建项目</button>
           </div>
@@ -610,6 +631,16 @@ td.red { color: var(--red); }
               <label class="form-label">负荷平滑权重 ρ</label>
               <input class="form-input" id="sc-ramp" type="number" value="0.25" min="0" max="1" step="0.05">
             </div>
+            <div class="form-group">
+              <label class="form-label">负荷曲线模式</label>
+              <select class="form-select" id="sc-load-profile">
+                <option value="raw" selected>raw — 使用用户/省份24小时负荷</option>
+                <option value="flat">flat — 平稳负荷</option>
+                <option value="day_peak">day_peak — 日间高峰</option>
+                <option value="night_bias">night_bias — 夜间偏置</option>
+                <option value="dual_peak">dual_peak — 双峰负荷</option>
+              </select>
+            </div>
             <div class="grid2">
               <div class="form-group">
                 <label class="form-label">S3 IT负荷上限 (MW)</label>
@@ -626,6 +657,14 @@ td.red { color: var(--red); }
                 <option value="true" selected>是（输出逐小时调度）</option>
                 <option value="false">否（仅输出容量与指标）</option>
               </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">自定义 GEP目标数组（可选 JSON）</label>
+              <input class="form-input" id="sc-gep-targets" placeholder="如 [0,0.1,0.2,0.5,0.8,1]；留空使用起止步长">
+            </div>
+            <div class="form-group">
+              <label class="form-label">时间转移窗口（JSON数组）</label>
+              <input class="form-input" id="sc-flex-windows" value="[2,5,8,12]">
             </div>
           </div>
         </div>
@@ -649,6 +688,28 @@ td.red { color: var(--red); }
               <label class="form-label">蓄冷造价 (¥/MWh_th)</label>
               <input class="form-input" id="sc-ct-cost" placeholder="默认 222,000">
             </div>
+          </div>
+          <div class="grid4">
+            <div class="form-group"><label class="form-label">购电阈值 pg_zero_tol (MW)</label><input class="form-input" id="sc-pg-zero" type="number" value="0.000001" step="0.000001"></div>
+            <div class="form-group"><label class="form-label">100%档购电阈值 (MWh)</label><input class="form-input" id="sc-grid-zero" type="number" value="0.000001" step="0.000001"></div>
+            <div class="form-group"><label class="form-label">GEP比例容差</label><input class="form-input" id="sc-gep-tol" type="number" value="0.000000005" step="0.000000001"></div>
+            <div class="form-group"><label class="form-label">碳目标字典序</label><select class="form-select" id="sc-carbon-lex"><option value="true" selected>是</option><option value="false">否</option></select></div>
+          </div>
+          <div class="grid4">
+            <div class="form-group"><label class="form-label">成本松弛(相对)</label><input class="form-input" id="sc-cost-rel" type="number" value="0.0001" step="0.00001"></div>
+            <div class="form-group"><label class="form-label">成本松弛(绝对 ¥/年)</label><input class="form-input" id="sc-cost-abs" type="number" value="1000" step="100"></div>
+            <div class="form-group"><label class="form-label">碳排松弛(相对)</label><input class="form-input" id="sc-carbon-rel" type="number" value="0.000001" step="0.000001"></div>
+            <div class="form-group"><label class="form-label">碳排松弛(kg/年)</label><input class="form-input" id="sc-carbon-abs" type="number" value="1000" step="100"></div>
+          </div>
+          <div class="grid4">
+            <div class="form-group"><label class="form-label">求解器</label><select class="form-select" id="sc-solver"><option value="auto" selected>auto</option><option value="cbc">cbc</option><option value="gurobi">gurobi</option></select></div>
+            <div class="form-group"><label class="form-label">单档时间上限(s)</label><input class="form-input" id="sc-time-limit" type="number" value="120" min="1" step="10"></div>
+            <div class="form-group"><label class="form-label">MIPGap</label><input class="form-input" id="sc-mip-gap" type="number" value="0.005" min="0" step="0.001"></div>
+            <div class="form-group"><label class="form-label">日志级别</label><input class="form-input" id="sc-verbose" type="number" value="0" min="0" step="1"></div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">完整 device_param JSON（可选，覆盖所有设备成本/寿命/效率/容量边界）</label>
+            <textarea class="form-input form-textarea" id="sc-device-json" placeholder='例如 {"discount_rate":0.06,"life_pv":20,"pv_cap_max":1000000,"battery_efficiency":0.95,"wind_cut_in":3,"pv_temp_coeff":-0.0006}'></textarea>
           </div>
           <div class="alert alert-info">
             💡 GEP扫描将对每个绿电占比目标点（0%→100%，步长5%）独立求解MILP优化问题，共 <span id="gep-count">21</span> 个求解任务。S3方案需要约 5-15 分钟（CBC求解器）。
@@ -1047,6 +1108,21 @@ async function api(method, path, body) {
   }
 }
 
+function parseOptionalJson(id, label) {
+  const el = document.getElementById(id);
+  const raw = (el?.value || '').trim();
+  if(!raw) return null;
+  try { return JSON.parse(raw); }
+  catch(e) { throw new Error(label + ' 不是合法 JSON: ' + e.message); }
+}
+
+function parseNumberOrNull(id) {
+  const raw = (document.getElementById(id)?.value || '').trim();
+  if(raw === '') return null;
+  const v = Number(raw);
+  return Number.isFinite(v) ? v : null;
+}
+
 async function checkBackendStatus() {
   try {
     await api('GET', '/api/health');
@@ -1129,9 +1205,18 @@ async function createProject() {
   const province_key = document.getElementById('proj-province').value;
   const region_name = document.getElementById('proj-region').value;
   const data_year = parseInt(document.getElementById('proj-year').value);
+  const typical_day_count = parseInt(document.getElementById('proj-typical-days').value) || 6;
+  const time_step_hours = parseFloat(document.getElementById('proj-time-step').value) || 1;
   if(!name||!province_key) return alert('请填写项目名称并选择省份');
   try {
-    const proj = await api('POST', '/api/projects', {name, province_key, region_name, data_year});
+    const weather_info = parseOptionalJson('proj-weather-json', 'weather_info');
+    const tariff_info = parseOptionalJson('proj-tariff-json', 'tariff_info');
+    const load_info = parseOptionalJson('proj-load-json', 'load_info');
+    const payload = {name, province_key, region_name, data_year, typical_day_count, time_step_hours};
+    if(weather_info) payload.weather_info = weather_info;
+    if(tariff_info) payload.tariff_info = tariff_info;
+    if(load_info) payload.load_info = load_info;
+    const proj = await api('POST', '/api/projects', payload);
     state.projects.push(proj);
     state.currentProject = proj;
     renderProjectList();
@@ -1196,12 +1281,29 @@ async function submitScenario() {
     export_ratio_limit: parseFloat(document.getElementById('sc-export-limit').value)||0.20,
     it_load_cap_s3: parseFloat(document.getElementById('sc-it-cap').value)||500,
     qch_cap_max_s3: parseFloat(document.getElementById('sc-qch-cap').value)||750,
-    flex_windows: [2,5,8,12],
+    load_profile: document.getElementById('sc-load-profile').value,
+    flex_windows: parseOptionalJson('sc-flex-windows', 'flex_windows') || [2,5,8,12],
+    gep_targets: parseOptionalJson('sc-gep-targets', 'gep_targets'),
     write_dispatch: document.getElementById('sc-dispatch').value === 'true',
-    cap_cost_pv: parseFloat(document.getElementById('sc-pv-cost').value)||null,
-    cap_cost_wt: parseFloat(document.getElementById('sc-wt-cost').value)||null,
-    cap_cost_ba: parseFloat(document.getElementById('sc-ba-cost').value)||null,
-    cap_cost_ct: parseFloat(document.getElementById('sc-ct-cost').value)||null,
+    pg_zero_tol: parseFloat(document.getElementById('sc-pg-zero').value)||1e-6,
+    grid_zero_tol_annual: parseFloat(document.getElementById('sc-grid-zero').value)||1e-6,
+    gep_tol: parseFloat(document.getElementById('sc-gep-tol').value)||5e-9,
+    carbon_lexicographic: document.getElementById('sc-carbon-lex').value === 'true',
+    cost_tie_rel_tol: parseFloat(document.getElementById('sc-cost-rel').value)||1e-4,
+    cost_tie_abs_tol: parseFloat(document.getElementById('sc-cost-abs').value)||1e3,
+    carbon_lex_rel_tol: parseFloat(document.getElementById('sc-carbon-rel').value)||1e-6,
+    carbon_lex_abs_tol_kg: parseFloat(document.getElementById('sc-carbon-abs').value)||1e3,
+    solver_param: {
+      solver: document.getElementById('sc-solver').value,
+      time_limit: parseFloat(document.getElementById('sc-time-limit').value)||120,
+      mip_gap: parseFloat(document.getElementById('sc-mip-gap').value)||0.005,
+      verbose: parseInt(document.getElementById('sc-verbose').value)||0,
+    },
+    device_param: parseOptionalJson('sc-device-json', 'device_param'),
+    cap_cost_pv: parseNumberOrNull('sc-pv-cost'),
+    cap_cost_wt: parseNumberOrNull('sc-wt-cost'),
+    cap_cost_ba: parseNumberOrNull('sc-ba-cost'),
+    cap_cost_ct: parseNumberOrNull('sc-ct-cost'),
   };
   const cnt = Math.round((state.currentScenario.gep_end - state.currentScenario.gep_start)/state.currentScenario.gep_step)+1;
   document.getElementById('sim-scenario-ready').style.display = 'block';

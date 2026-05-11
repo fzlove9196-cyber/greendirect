@@ -61,6 +61,7 @@ class TariffInfo(BaseModel):
 
 class LoadInfo(BaseModel):
     it_load: List[float] = Field(..., description="24小时 IT 基准负荷，MW")
+    load_profile: str = Field("raw", description="负荷曲线模式：raw/flat/day_peak/night_bias/dual_peak")
     it_load_cap_s3: float = 500.0
     chiller_cap_multiplier: float = 1.5
     qch_cap_max_s3: float = 750.0
@@ -84,6 +85,10 @@ class DeviceParam(BaseModel):
     cold_storage_cap_cost: Optional[float] = None
     cold_storage_om_rate: Optional[float] = None
     line_capex: Optional[float] = None
+    pv_cap_max: Optional[float] = None
+    wt_cap_max: Optional[float] = None
+    battery_cap_max: Optional[float] = None
+    cold_storage_cap_max: Optional[float] = None
     battery_efficiency: Optional[float] = None
     battery_power_ratio: Optional[float] = None
     battery_soc_min: Optional[float] = None
@@ -111,6 +116,8 @@ class ProjectCreate(BaseModel):
     name: str
     region_name: str
     data_year: int = 2025
+    typical_day_count: int = 6
+    time_step_hours: float = 1.0
     province_key: Optional[str] = None
     description: Optional[str] = ""
     weather_info: Optional[WeatherInfo] = None
@@ -138,6 +145,10 @@ class ScenarioConfig(BaseModel):
     grid_zero_tol_annual: float = 1e-6
     gep_tol: float = 5e-9
     carbon_lexicographic: bool = True
+    cost_tie_rel_tol: float = 1e-4
+    cost_tie_abs_tol: float = 1e3
+    carbon_lex_rel_tol: float = 1e-6
+    carbon_lex_abs_tol_kg: float = 1e3
     load_profile: str = "raw"
     it_load_cap_s3: Optional[float] = None
     qch_cap_max_s3: Optional[float] = None
@@ -236,6 +247,12 @@ def _build_weather_tariff(project: dict, np):
     if w.ndim != 1 or len(w) == 0:
         raise ValueError("weather_info.typical_day_weight must be a non-empty vector")
     n_day = len(w)
+    expected_n_day = int(project.get("typical_day_count") or n_day)
+    if expected_n_day != n_day:
+        raise ValueError(f"region_info.typical_day_count={expected_n_day} does not match weather_info.typical_day_weight length={n_day}")
+    time_step = float(project.get("time_step_hours") or 1.0)
+    if abs(time_step - 1.0) > 1e-9:
+        raise ValueError("region_info.time_step_hours must be 1.0 in the current 24-hour MATLAB-compatible solver")
     d = np.array(wd_raw["d"], dtype=float)
     if d.shape != (24,):
         raise ValueError("load_info.it_load must contain exactly 24 hourly values")
@@ -306,7 +323,9 @@ def _apply_device_param(cfg, scenario: dict):
         "wt_cap_cost": "cap_cost_wt", "wt_om_cost": "om_wt",
         "battery_cap_cost": "cap_cost_ba", "battery_om_rate": "om_rate_ba",
         "cold_storage_cap_cost": "cap_cost_ct", "cold_storage_om_rate": "om_rate_ct",
-        "line_capex": "lineCapex", "battery_efficiency": "eta_ba",
+        "line_capex": "lineCapex", "pv_cap_max": "CpvMax",
+        "wt_cap_max": "CwtMax", "battery_cap_max": "CbaMax",
+        "cold_storage_cap_max": "CctMax", "battery_efficiency": "eta_ba",
         "battery_power_ratio": "p_ratio_ba", "battery_soc_min": "SOCmin_ba",
         "battery_soc_max": "SOCmax_ba", "battery_soc_initial": "SOC0_ba",
         "cold_storage_efficiency": "eta_ct", "cold_storage_power_ratio": "p_ratio_ct",
@@ -511,12 +530,18 @@ def run_simulation_sync(run_id: str, project_id: str, scenario: dict):
             grid_zero_tol_annual=scenario.get("grid_zero_tol_annual", 1e-6),
             gep_tol=scenario.get("gep_tol", 5e-9),
             carbon_lexicographic=scenario.get("carbon_lexicographic", True),
-            load_profile=scenario.get("load_profile", "raw"),
+            cost_tie_rel_tol=scenario.get("cost_tie_rel_tol", 1e-4),
+            cost_tie_abs_tol=scenario.get("cost_tie_abs_tol", 1e3),
+            carbon_lex_rel_tol=scenario.get("carbon_lex_rel_tol", 1e-6),
+            carbon_lex_abs_tol_kg=scenario.get("carbon_lex_abs_tol_kg", 1e3),
+            load_profile=scenario.get("load_profile") or load_info.get("load_profile", "raw"),
+            chiller_cap_multiplier=load_info.get("chiller_cap_multiplier", 1.5),
             IT_load_cap_S3=scenario.get("it_load_cap_s3") or load_info.get("it_load_cap_s3", 500.0),
             Qch_cap_max_S3=scenario.get("qch_cap_max_s3") or load_info.get("qch_cap_max_s3", 750.0),
             solver=solver_param.get("solver", "auto"),
             time_limit=solver_param.get("time_limit", 120.0),
             mip_gap=solver_param.get("mip_gap", 5e-3),
+            verbose=solver_param.get("verbose", 0),
         )
         _apply_device_param(cfg, scenario)
 
@@ -607,6 +632,8 @@ def create_project(body: ProjectCreate):
         "name": body.name,
         "region_name": body.region_name,
         "data_year": body.data_year,
+        "typical_day_count": body.typical_day_count,
+        "time_step_hours": body.time_step_hours,
         "province_key": body.province_key or "Prov1",
         "description": body.description,
         "weather_info": body.weather_info.model_dump() if body.weather_info else None,
