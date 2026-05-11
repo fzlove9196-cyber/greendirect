@@ -7,6 +7,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/echarts/5.5.1/echarts.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
 :root {
   --bg: #050d1a;
@@ -247,6 +249,13 @@ td.red { color: var(--red); }
 
 /* CHART CONTAINER */
 .chart-container { position: relative; width: 100%; }
+.echart { width: 100%; height: 100%; min-height: inherit; }
+.input-toolbar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:12px; }
+.edit-table-wrap { max-height: 340px; overflow:auto; border:1px solid var(--border); border-radius:var(--radius); background:var(--bg3); }
+.edit-table { min-width: 100%; border-collapse: collapse; }
+.edit-table th { position: sticky; top: 0; background: var(--panel2); z-index: 1; }
+.edit-table input { width: 86px; background:rgba(5,13,26,0.7); border:1px solid rgba(0,200,255,0.12); color:var(--text); border-radius:4px; padding:5px 6px; font-family:var(--mono); font-size:11px; }
+.edit-table input:focus { outline:none; border-color:var(--accent); }
 
 /* PROGRESS BAR */
 .progress-bar { height: 6px; background: var(--bg3); border-radius: 3px; overflow: hidden; }
@@ -519,10 +528,21 @@ td.red { color: var(--red); }
                 <input class="form-input" id="proj-time-step" type="number" value="1" min="0.25" step="0.25">
               </div>
             </div>
+            <div class="grid2">
+              <div class="form-group">
+                <label class="form-label">典型日数量</label>
+                <input class="form-input" id="proj-typical-days" type="number" value="6" min="1" step="1">
+              </div>
+              <div class="form-group">
+                <label class="form-label">时间步长 (小时)</label>
+                <input class="form-input" id="proj-time-step" type="number" value="1" min="0.25" step="0.25">
+              </div>
+            </div>
             <div class="form-group">
               <label class="form-label">项目描述</label>
               <input class="form-input" id="proj-desc" placeholder="可选">
             </div>
+            <div class="alert alert-info">项目创建仅填写名称、地区、年份等基础信息。电价、资源、负荷等详细参数请在「场景配置 / 资源诊断」模块中为选中的项目设置。</div>
             <div class="form-group">
               <label class="form-label">自定义 weather_info JSON（可选）</label>
               <textarea class="form-input form-textarea" id="proj-weather-json" placeholder='留空使用省份内置数据；可填 {"temp_dry":[[...]],"temp_wet":[[...]],"solar_irradiance":[[...]],"wind_speed":[[...]],"typical_day_weight":[...],"grid_carbon_factor":[[...] ]}'></textarea>
@@ -569,6 +589,68 @@ td.red { color: var(--red); }
                 <option value="">请先创建项目</option>
               </select>
             </div>
+            <div class="alert alert-info">在本模块设置当前项目的资源、电价与负荷详细参数；支持 Excel 导入和表格编辑。未设置时使用省份内置默认数据。</div>
+            <div style="font-size:12px; color:var(--accent); font-weight:600; margin:18px 0 10px">典型日气象输入（可选覆盖）</div>
+            <div class="grid2">
+              <div class="form-group">
+                <label class="form-label">干球温度 temp_dry JSON (°C)</label>
+                <textarea class="form-input form-textarea" id="proj-temp-dry-json" placeholder="24×N数组，如 [[-5,-2,...],[...]]；留空使用省份内置"></textarea>
+                <div class="help-text">MATLAB 原始输入 Tdb，对应天气文件 A1:F24，用于光伏温度修正。</div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">湿球温度 temp_wet JSON (°C)</label>
+                <textarea class="form-input form-textarea" id="proj-temp-wet-json" placeholder="24×N数组；留空使用省份内置"></textarea>
+                <div class="help-text">MATLAB 原始输入 Twb，对应 H1:M24，用于计算制冷机 COP。</div>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">完整 weather_info JSON（可选）</label>
+              <textarea class="form-input form-textarea" id="proj-weather-json" placeholder='留空使用省份内置数据；可填 {"temp_dry":[[...]],"temp_wet":[[...]],"solar_irradiance":[[...]],"wind_speed":[[...]],"typical_day_weight":[...],"grid_carbon_factor":[[...] ]}'></textarea>
+              <div class="help-text">原始 MATLAB 天气工作簿包含干球温度、湿球温度、太阳辐照度、风速、典型日权重和电网碳因子；这里可一次性覆盖全部字段。</div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">表格化输入 / Excel导入（推荐）</label>
+              <div class="input-toolbar">
+                <select class="form-select" id="proj-data-kind" style="width:230px" onchange="switchProjectDataKind()">
+                  <option value="temp_dry">干球温度 temp_dry (24×N)</option>
+                  <option value="temp_wet">湿球温度 temp_wet (24×N)</option>
+                  <option value="solar_irradiance">太阳辐照度 solar_irradiance (24×N)</option>
+                  <option value="wind_speed">风速 wind_speed (24×N)</option>
+                  <option value="grid_carbon_factor">电网碳因子 grid_carbon_factor (24×N)</option>
+                  <option value="typical_day_weight">典型日权重 typical_day_weight (N)</option>
+                  <option value="grid_price">分时购电价 grid_price (24)</option>
+                  <option value="it_load">IT负荷 it_load (24)</option>
+                </select>
+                <button class="btn btn-outline" type="button" onclick="renderProjectDataEditor(true)">生成/刷新表格</button>
+                <input class="form-input" id="proj-excel-file" type="file" accept=".xlsx,.xls,.csv" style="max-width:250px" onchange="importProjectExcel(event)">
+                <button class="btn btn-outline" type="button" onclick="saveProjectEditorData()">保存当前表格</button>
+              </div>
+              <div class="help-text">Excel 可按 sheet 名导入：temp_dry、temp_wet、solar_irradiance、wind_speed、grid_carbon_factor、typical_day_weight、grid_price、it_load；若未匹配 sheet，则导入到当前选择的数据项。</div>
+              <div id="project-data-editor" class="edit-table-wrap"></div>
+            </div>
+            <div class="grid3">
+              <div class="form-group">
+                <label class="form-label">容量电费 (元/kW/月，可选)</label>
+                <input class="form-input" id="proj-capacity-fee" type="number" step="0.01" placeholder="留空使用省份内置">
+              </div>
+              <div class="form-group">
+                <label class="form-label">上网电价 (元/kWh，可选)</label>
+                <input class="form-input" id="proj-export-price" type="number" step="0.001" placeholder="留空使用省份内置">
+              </div>
+              <div class="form-group">
+                <label class="form-label">电价方案名称</label>
+                <input class="form-input" id="proj-tariff-name" placeholder="如 一般工商业分时电价">
+              </div>
+            </div>
+            <details class="form-group">
+              <summary class="form-label" style="cursor:pointer">高级：tariff_info JSON（可选）</summary>
+              <textarea class="form-input form-textarea" id="proj-tariff-json" placeholder='留空使用表格和上方输入；可填 {"grid_price":[...24小时...],"capacity_fee":35,"export_price":0.30,"currency":"CNY","tariff_name":"方案名"}'></textarea>
+            </details>
+            <details class="form-group">
+              <summary class="form-label" style="cursor:pointer">高级：load_info JSON（可选）</summary>
+              <textarea class="form-input form-textarea" id="proj-load-json" placeholder='可填 {"it_load":[...24小时MW...],"load_profile":"raw","it_load_cap_s3":500,"chiller_cap_multiplier":1.5,"qch_cap_max_s3":750,"alpha":0.4,"flex_windows":[2,5,8,12]}'></textarea>
+            </details>
+            <button class="btn btn-outline" type="button" onclick="saveSelectedProjectInputs()" style="margin-bottom:16px">保存当前项目详细参数</button>
             <div class="form-group">
               <label class="form-label">场景名称</label>
               <input class="form-input" id="sc-name" value="S3基准场景">
@@ -631,6 +713,7 @@ td.red { color: var(--red); }
               <label class="form-label">负荷平滑权重 ρ</label>
               <input class="form-input" id="sc-ramp" type="number" value="0.25" min="0" max="1" step="0.05">
             </div>
+            <div style="font-size:12px; color:var(--accent); font-weight:600; margin:18px 0 10px">数据中心负荷特性（仿真输入）</div>
             <div class="form-group">
               <label class="form-label">负荷曲线模式</label>
               <select class="form-select" id="sc-load-profile">
@@ -642,6 +725,31 @@ td.red { color: var(--red); }
               </select>
             </div>
             <div class="grid2">
+              <div class="form-group">
+                <label class="form-label">平均 IT 负荷 (MW)</label>
+                <input class="form-input" id="sc-load-mean" type="number" value="300" min="0" step="10">
+                <div class="help-text">未填写24小时曲线时，后台以该均值结合负荷曲线模式生成仿真负荷。</div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">负荷曲线模式</label>
+                <select class="form-select" id="sc-load-profile">
+                  <option value="raw" selected>raw — 使用输入的24小时负荷/均值平负荷</option>
+                  <option value="flat">flat — 平稳负荷</option>
+                  <option value="day_peak">day_peak — 日间高峰</option>
+                  <option value="night_bias">night_bias — 夜间偏置</option>
+                  <option value="dual_peak">dual_peak — 双峰负荷</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">24小时 IT 负荷曲线（可选 JSON，MW）</label>
+              <input class="form-input" id="sc-it-load-24h" placeholder="如 [280,270,...,300]；填写后优先于平均负荷">
+            </div>
+            <div class="grid3">
+              <div class="form-group">
+                <label class="form-label">制冷机容量倍数</label>
+                <input class="form-input" id="sc-chiller-mult" type="number" value="1.5" min="0" step="0.1">
+              </div>
               <div class="form-group">
                 <label class="form-label">S3 IT负荷上限 (MW)</label>
                 <input class="form-input" id="sc-it-cap" type="number" value="500" min="1" step="10">
@@ -742,6 +850,20 @@ td.red { color: var(--red); }
               <div class="card-title">风速（典型日均值）</div>
               <div class="chart-container" style="height:220px">
                 <canvas id="wind-chart" role="img" aria-label="风速曲线">风速曲线</canvas>
+              </div>
+            </div>
+          </div>
+          <div class="grid2">
+            <div class="card">
+              <div class="card-title">干/湿球温度（典型日均值 °C）</div>
+              <div class="chart-container" style="height:220px">
+                <canvas id="temp-chart" role="img" aria-label="干球湿球温度曲线">温度曲线</canvas>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-title">制冷机 COP（由湿球温度计算）</div>
+              <div class="chart-container" style="height:220px">
+                <canvas id="cop-chart" role="img" aria-label="制冷机COP曲线">COP曲线</canvas>
               </div>
             </div>
           </div>
@@ -856,7 +978,7 @@ td.red { color: var(--red); }
           <div class="card">
             <div class="card-title">📈 GEP-LCOE曲线（绿电占比 vs 度电成本）</div>
             <div class="chart-container" style="height:320px">
-              <canvas id="gep-lcoe-chart" role="img" aria-label="GEP与LCOE关系曲线">GEP与LCOE关系曲线图</canvas>
+              <div id="gep-lcoe-chart" class="echart" role="img" aria-label="GEP与LCOE关系曲线"></div>
             </div>
           </div>
 
@@ -864,7 +986,7 @@ td.red { color: var(--red); }
           <div class="card">
             <div class="card-title">🏗️ 容量配置曲线（随绿电比例变化）</div>
             <div class="chart-container" style="height:300px">
-              <canvas id="cap-chart" role="img" aria-label="容量配置曲线">容量配置曲线</canvas>
+              <div id="cap-chart" class="echart" role="img" aria-label="容量配置曲线"></div>
             </div>
           </div>
 
@@ -909,14 +1031,14 @@ td.red { color: var(--red); }
             <div class="card-title">24小时电力平衡（MW）</div>
             <div class="dispatch-legend" id="dispatch-legend"></div>
             <div class="chart-container" style="height:320px">
-              <canvas id="dispatch-chart" role="img" aria-label="24小时电力平衡图">24小时电力平衡图</canvas>
+              <div id="dispatch-chart" class="echart" role="img" aria-label="24小时电力平衡图"></div>
             </div>
           </div>
 
           <div class="card" id="bess-chart-card">
             <div class="card-title">电池储能SOC（能量状态）</div>
             <div class="chart-container" style="height:200px">
-              <canvas id="bess-chart" role="img" aria-label="电池储能SOC曲线">电池储能SOC曲线</canvas>
+              <div id="bess-chart" class="echart" role="img" aria-label="电池储能SOC曲线"></div>
             </div>
           </div>
         </div>
@@ -1063,6 +1185,9 @@ let state = {
   bestPoints: null,
   pollTimer: null,
   chartInstances: {},
+  projectInputOverrides: { weather_info:{}, tariff_info:{}, load_info:{} },
+  activeProjectDataKind: 'temp_dry',
+  compareProjectIds: [],
 };
 
 // ══════════════════════════════════════════════
@@ -1121,6 +1246,164 @@ function parseNumberOrNull(id) {
   if(raw === '') return null;
   const v = Number(raw);
   return Number.isFinite(v) ? v : null;
+}
+
+function parseOptionalHourlyLoad(id) {
+  const values = parseOptionalJson(id, '24小时IT负荷曲线');
+  if(values == null) return null;
+  if(!Array.isArray(values) || values.length !== 24) {
+    throw new Error('24小时IT负荷曲线必须是长度为24的JSON数组');
+  }
+  values.forEach((v, i) => {
+    if(typeof v !== 'number' || !Number.isFinite(v) || v < 0) {
+      throw new Error(`24小时IT负荷曲线第 ${i+1} 个值必须是非负数字`);
+    }
+  });
+  return values;
+}
+
+function validateWeatherInfoShape(weatherInfo) {
+  const matrixFields = ['temp_dry','temp_wet','solar_irradiance','wind_speed','grid_carbon_factor'];
+  const nDay = weatherInfo.typical_day_weight?.length;
+  matrixFields.forEach(field => {
+    const value = weatherInfo[field];
+    if(value == null) return;
+    if(!Array.isArray(value) || value.length !== 24) throw new Error(`weather_info.${field} 必须是24行数组`);
+    value.forEach((row, i) => {
+      if(!Array.isArray(row)) throw new Error(`weather_info.${field} 第 ${i+1} 行必须是数组`);
+      if(nDay && row.length !== nDay) throw new Error(`weather_info.${field} 第 ${i+1} 行列数必须等于典型日权重长度 ${nDay}`);
+      row.forEach((v, j) => {
+        if(typeof v !== 'number' || !Number.isFinite(v)) throw new Error(`weather_info.${field}[${i}][${j}] 必须是数字`);
+      });
+    });
+  });
+}
+
+const projectDatasetMeta = {
+  temp_dry: {target:'weather_info', rows:24, cols:() => parseInt(document.getElementById('proj-typical-days')?.value)||6, label:'干球温度', unit:'°C'},
+  temp_wet: {target:'weather_info', rows:24, cols:() => parseInt(document.getElementById('proj-typical-days')?.value)||6, label:'湿球温度', unit:'°C'},
+  solar_irradiance: {target:'weather_info', rows:24, cols:() => parseInt(document.getElementById('proj-typical-days')?.value)||6, label:'太阳辐照度', unit:'W/m²'},
+  wind_speed: {target:'weather_info', rows:24, cols:() => parseInt(document.getElementById('proj-typical-days')?.value)||6, label:'风速', unit:'m/s'},
+  grid_carbon_factor: {target:'weather_info', rows:24, cols:() => parseInt(document.getElementById('proj-typical-days')?.value)||6, label:'电网碳因子', unit:'kgCO₂/kWh'},
+  typical_day_weight: {target:'weather_info', rows:1, cols:() => parseInt(document.getElementById('proj-typical-days')?.value)||6, vector:true, label:'典型日权重', unit:'天/年'},
+  grid_price: {target:'tariff_info', rows:24, cols:() => 1, vector:true, label:'分时购电价', unit:'元/kWh'},
+  it_load: {target:'load_info', rows:24, cols:() => 1, vector:true, label:'IT负荷', unit:'MW'},
+};
+
+function defaultDatasetValue(kind) {
+  const meta = projectDatasetMeta[kind];
+  const cols = meta.cols();
+  if(meta.vector) return Array.from({length: meta.rows === 1 ? cols : meta.rows}, () => 0);
+  return Array.from({length:meta.rows}, () => Array(cols).fill(0));
+}
+
+function getProjectDataset(kind) {
+  const meta = projectDatasetMeta[kind];
+  return state.projectInputOverrides[meta.target][kind] || defaultDatasetValue(kind);
+}
+
+function setProjectDataset(kind, value) {
+  const meta = projectDatasetMeta[kind];
+  state.projectInputOverrides[meta.target][kind] = value;
+}
+
+function switchProjectDataKind() {
+  saveProjectEditorData(false);
+  state.activeProjectDataKind = document.getElementById('proj-data-kind').value;
+  renderProjectDataEditor(false);
+}
+
+function renderProjectDataEditor(reset=false) {
+  const kind = document.getElementById('proj-data-kind')?.value || state.activeProjectDataKind;
+  state.activeProjectDataKind = kind;
+  const meta = projectDatasetMeta[kind];
+  const value = getProjectDataset(kind);
+  const container = document.getElementById('project-data-editor');
+  if(!container) return;
+  const cols = meta.vector ? (meta.rows === 1 ? meta.cols() : 1) : meta.cols();
+  const header = ['<th>时段</th>'];
+  for(let c=0;c<cols;c++) header.push(`<th>${meta.rows===1?'典型日':'D'}${c+1}</th>`);
+  const bodyRows = [];
+  const rows = meta.rows === 1 ? 1 : meta.rows;
+  for(let r=0;r<rows;r++) {
+    const cells = [`<td>${meta.rows===1?meta.label:(r+1)+'h'}</td>`];
+    for(let c=0;c<cols;c++) {
+      const v = meta.vector ? (meta.rows===1 ? value[c] : value[r]) : value?.[r]?.[c];
+      cells.push(`<td><input type="number" step="any" data-r="${r}" data-c="${c}" value="${v ?? 0}" onchange="document.getElementById('project-data-editor').dataset.dirty='1'"></td>`);
+    }
+    bodyRows.push(`<tr>${cells.join('')}</tr>`);
+  }
+  container.dataset.dirty = '0';
+  container.innerHTML = `<div style="padding:10px;color:var(--text2);font-size:12px">当前编辑：${meta.label} (${meta.unit})</div><table class="edit-table"><thead><tr>${header.join('')}</tr></thead><tbody>${bodyRows.join('')}</tbody></table>`;
+}
+
+function saveProjectEditorData(showMessage=true) {
+  const container = document.getElementById('project-data-editor');
+  if(!container || !container.querySelector('input')) return;
+  if(container.dataset.dirty !== '1') return;
+  const kind = state.activeProjectDataKind;
+  const meta = projectDatasetMeta[kind];
+  const inputs = [...container.querySelectorAll('input')];
+  let value;
+  if(meta.vector) {
+    const len = meta.rows === 1 ? meta.cols() : meta.rows;
+    value = Array(len).fill(0);
+    inputs.forEach(inp => { value[meta.rows===1 ? Number(inp.dataset.c) : Number(inp.dataset.r)] = Number(inp.value)||0; });
+  } else {
+    value = Array.from({length:meta.rows}, () => Array(meta.cols()).fill(0));
+    inputs.forEach(inp => { value[Number(inp.dataset.r)][Number(inp.dataset.c)] = Number(inp.value)||0; });
+  }
+  setProjectDataset(kind, value);
+  container.dataset.dirty = '0';
+  if(showMessage) alert(`${meta.label} 表格数据已保存`);
+}
+
+function sheetToNumericGrid(sheet) {
+  return XLSX.utils.sheet_to_json(sheet, {header:1, raw:true, defval:null})
+    .map(row => row.map(v => typeof v === 'number' ? v : Number(v)).filter(v => Number.isFinite(v)))
+    .filter(row => row.length);
+}
+
+function normalizeImportedDataset(kind, grid) {
+  const meta = projectDatasetMeta[kind];
+  if(meta.vector) {
+    const len = meta.rows === 1 ? meta.cols() : meta.rows;
+    const flat = grid.flat().filter(v => Number.isFinite(v));
+    if(flat.length < len) throw new Error(`${meta.label} 至少需要 ${len} 个数值`);
+    return flat.slice(0, len);
+  }
+  const rows = grid.slice(0, meta.rows).map(row => row.slice(0, meta.cols()));
+  if(rows.length < meta.rows || rows.some(row => row.length < meta.cols())) throw new Error(`${meta.label} 需要 ${meta.rows}×${meta.cols()} 个数值`);
+  return rows;
+}
+
+async function importProjectExcel(event) {
+  const file = event.target.files?.[0];
+  if(!file) return;
+  if(!window.XLSX) return alert('Excel解析库未加载，请检查网络或刷新页面');
+  try {
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, {type:'array'});
+    const keys = Object.keys(projectDatasetMeta);
+    let imported = 0;
+    wb.SheetNames.forEach(name => {
+      const key = keys.find(k => k.toLowerCase() === name.trim().toLowerCase());
+      if(!key) return;
+      setProjectDataset(key, normalizeImportedDataset(key, sheetToNumericGrid(wb.Sheets[name])));
+      imported++;
+    });
+    if(imported === 0 && wb.SheetNames.length) {
+      const key = document.getElementById('proj-data-kind').value;
+      setProjectDataset(key, normalizeImportedDataset(key, sheetToNumericGrid(wb.Sheets[wb.SheetNames[0]])));
+      imported = 1;
+    }
+    renderProjectDataEditor(false);
+    alert(`Excel导入完成：识别 ${imported} 个数据表`);
+  } catch(e) {
+    alert('Excel导入失败: '+e.message);
+  } finally {
+    event.target.value = '';
+  }
 }
 
 async function checkBackendStatus() {
@@ -1209,6 +1492,7 @@ async function createProject() {
   const time_step_hours = parseFloat(document.getElementById('proj-time-step').value) || 1;
   if(!name||!province_key) return alert('请填写项目名称并选择省份');
   try {
+    const proj = await api('POST', '/api/projects', {name, province_key, region_name, data_year, typical_day_count, time_step_hours});
     const weather_info = parseOptionalJson('proj-weather-json', 'weather_info');
     const tariff_info = parseOptionalJson('proj-tariff-json', 'tariff_info');
     const load_info = parseOptionalJson('proj-load-json', 'load_info');
@@ -1221,25 +1505,107 @@ async function createProject() {
     state.currentProject = proj;
     renderProjectList();
     updateScenarioProjectSel();
-    alert(`项目「${name}」创建成功！ID: ${proj.id}`);
+    alert(`项目「${name}」创建成功！请到「场景配置」设置资源、电价和负荷详细参数。ID: ${proj.id}`);
+    showPage('scenario');
   } catch(e) { alert('创建失败: '+e.message); }
+}
+
+function buildProjectInputPayload() {
+  const weather_info = parseOptionalJson('proj-weather-json', 'weather_info') || {};
+  const tempDry = parseOptionalJson('proj-temp-dry-json', 'temp_dry');
+  const tempWet = parseOptionalJson('proj-temp-wet-json', 'temp_wet');
+  saveProjectEditorData(false);
+  Object.assign(weather_info, state.projectInputOverrides.weather_info);
+  if(tempDry) weather_info.temp_dry = tempDry;
+  if(tempWet) weather_info.temp_wet = tempWet;
+  validateWeatherInfoShape(weather_info);
+  const tariff_info = {...state.projectInputOverrides.tariff_info, ...(parseOptionalJson('proj-tariff-json', 'tariff_info') || {})};
+  const capFee = parseNumberOrNull('proj-capacity-fee');
+  const exportPrice = parseNumberOrNull('proj-export-price');
+  const tariffName = document.getElementById('proj-tariff-name').value.trim();
+  if(capFee != null) tariff_info.capacity_fee = capFee;
+  if(exportPrice != null) tariff_info.export_price = exportPrice;
+  if(tariffName) tariff_info.tariff_name = tariffName;
+  const load_info = {...state.projectInputOverrides.load_info, ...(parseOptionalJson('proj-load-json', 'load_info') || {})};
+  const payload = {};
+  if(Object.keys(weather_info).length) payload.weather_info = weather_info;
+  if(Object.keys(tariff_info).length) payload.tariff_info = tariff_info;
+  if(Object.keys(load_info).length) payload.load_info = load_info;
+  return payload;
+}
+
+async function saveSelectedProjectInputs(showAlert=true) {
+  const pid = document.getElementById('sc-project').value || state.currentProject?.id;
+  if(!pid) { if(showAlert) alert('请先选择项目'); return false; }
+  try {
+    const payload = buildProjectInputPayload();
+    if(!Object.keys(payload).length) { if(showAlert) alert('未填写详细参数，将继续使用省份默认数据'); return true; }
+    const updated = await api('PUT', `/api/projects/${pid}/inputs`, payload);
+    const idx = state.projects.findIndex(p=>p.id===pid);
+    if(idx >= 0) state.projects[idx] = updated;
+    if(state.currentProject?.id === pid) state.currentProject = updated;
+    if(showAlert) alert('项目详细参数已保存');
+    return true;
+  } catch(e) {
+    if(showAlert) alert('保存项目详细参数失败: '+e.message);
+    return false;
+  }
 }
 
 function renderProjectList() {
   const el = document.getElementById('project-list');
   if(!state.projects.length) { el.innerHTML='<div style="color:var(--text3);font-size:13px">暂无项目</div>'; return; }
   el.innerHTML = state.projects.map(p=>`
-    <div style="padding:12px; background:var(--bg3); border-radius:var(--radius); border:1px solid var(--border); margin-bottom:8px; display:flex; align-items:center; justify-content:space-between; cursor:pointer" onclick="selectProject('${p.id}')">
-      <div>
+    <div style="padding:12px; background:var(--bg3); border-radius:var(--radius); border:1px solid var(--border); margin-bottom:8px; display:grid; grid-template-columns:auto 1fr auto; gap:12px; align-items:center">
+      <input type="checkbox" ${state.compareProjectIds.includes(p.id)?'checked':''} onchange="toggleProjectCompare('${p.id}', this.checked)" title="加入多项目对比">
+      <div style="cursor:pointer" onclick="selectProject('${p.id}')">
         <div style="font-size:13px; font-weight:500; color:${state.currentProject?.id===p.id?'var(--accent)':'var(--text)'}">${p.name}</div>
         <div style="font-size:11px; color:var(--text3)">${p.region_name} · ${p.data_year} · ID: ${p.id}</div>
       </div>
-      <span class="badge badge-blue">${state.currentProject?.id===p.id?'当前':'选择'}</span>
-    </div>`).join('');
+      <div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end">
+        <button class="btn btn-outline" style="font-size:11px;padding:4px 8px" onclick="selectProject('${p.id}');showPage('scenario')">参数设置</button>
+        <button class="btn btn-outline" style="font-size:11px;padding:4px 8px" onclick="viewProjectLatestResults('${p.id}')">查看结果</button>
+        <span class="badge badge-blue">${state.currentProject?.id===p.id?'当前':'项目'}</span>
+      </div>
+    </div>`).join('') + `
+    <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn btn-outline" onclick="showPage('compare');renderCompare()">多项目对比</button>
+    </div>`;
+}
+
+function toggleProjectCompare(id, checked) {
+  if(checked && !state.compareProjectIds.includes(id)) state.compareProjectIds.push(id);
+  if(!checked) state.compareProjectIds = state.compareProjectIds.filter(x=>x!==id);
+}
+
+async function findLatestCompletedRun(projectId) {
+  const runs = await api('GET', `/api/runs?project_id=${projectId}`);
+  return runs.filter(r=>r.status==='completed').sort((a,b)=>(b.finished_at||b.created_at||'').localeCompare(a.finished_at||a.created_at||''))[0];
+}
+
+async function viewProjectLatestResults(projectId) {
+  try {
+    const run = await findLatestCompletedRun(projectId);
+    if(!run) return alert('该项目暂无已完成仿真，请先运行优化仿真');
+    await loadResults(run.id);
+  } catch(e) { alert('加载项目结果失败: '+e.message); }
+}
+
+function loadProjectInputsToEditor(project) {
+  state.projectInputOverrides = {
+    weather_info: {...(project?.weather_info || {})},
+    tariff_info: {...(project?.tariff_info || {})},
+    load_info: {...(project?.load_info || {})},
+  };
+  if(document.getElementById('proj-capacity-fee')) document.getElementById('proj-capacity-fee').value = project?.tariff_info?.capacity_fee ?? '';
+  if(document.getElementById('proj-export-price')) document.getElementById('proj-export-price').value = project?.tariff_info?.export_price ?? '';
+  if(document.getElementById('proj-tariff-name')) document.getElementById('proj-tariff-name').value = project?.tariff_info?.tariff_name ?? '';
+  renderProjectDataEditor(false);
 }
 
 function selectProject(id) {
   state.currentProject = state.projects.find(p=>p.id===id);
+  loadProjectInputsToEditor(state.currentProject);
   renderProjectList();
   updateScenarioProjectSel();
 }
@@ -1266,6 +1632,30 @@ function updateScenarioUI() {
 async function submitScenario() {
   const pid = document.getElementById('sc-project').value;
   if(!pid) return alert('请先选择项目');
+  const inputsSaved = await saveSelectedProjectInputs(false);
+  if(!inputsSaved) return;
+  let hourlyLoad = null;
+  let flexWindows = [2,5,8,12];
+  let gepTargets = null;
+  let deviceParam = null;
+  try {
+    hourlyLoad = parseOptionalHourlyLoad('sc-it-load-24h');
+    flexWindows = parseOptionalJson('sc-flex-windows', 'flex_windows') || [2,5,8,12];
+    gepTargets = parseOptionalJson('sc-gep-targets', 'gep_targets');
+    deviceParam = parseOptionalJson('sc-device-json', 'device_param');
+  } catch(e) {
+    return alert(e.message);
+  }
+  const dataCenterLoad = {
+    mean_it_load_mw: parseNumberOrNull('sc-load-mean'),
+    it_load: hourlyLoad,
+    load_profile: hourlyLoad ? 'raw' : document.getElementById('sc-load-profile').value,
+    chiller_cap_multiplier: parseFloat(document.getElementById('sc-chiller-mult').value)||1.5,
+    it_load_cap_s3: parseFloat(document.getElementById('sc-it-cap').value)||500,
+    qch_cap_max_s3: parseFloat(document.getElementById('sc-qch-cap').value)||750,
+    alpha: parseFloat(document.getElementById('sc-alpha').value)||0.4,
+    flex_windows: flexWindows,
+  };
   state.currentScenario = {
     project_id: pid,
     scenario_name: document.getElementById('sc-name').value,
@@ -1279,6 +1669,12 @@ async function submitScenario() {
     ramp_weight: parseFloat(document.getElementById('sc-ramp').value)||0.25,
     curt_rate_limit: parseFloat(document.getElementById('sc-curt-limit').value)||0.40,
     export_ratio_limit: parseFloat(document.getElementById('sc-export-limit').value)||0.20,
+    it_load_cap_s3: dataCenterLoad.it_load_cap_s3,
+    qch_cap_max_s3: dataCenterLoad.qch_cap_max_s3,
+    load_profile: dataCenterLoad.load_profile,
+    data_center_load: dataCenterLoad,
+    flex_windows: flexWindows,
+    gep_targets: gepTargets,
     it_load_cap_s3: parseFloat(document.getElementById('sc-it-cap').value)||500,
     qch_cap_max_s3: parseFloat(document.getElementById('sc-qch-cap').value)||750,
     load_profile: document.getElementById('sc-load-profile').value,
@@ -1299,6 +1695,7 @@ async function submitScenario() {
       mip_gap: parseFloat(document.getElementById('sc-mip-gap').value)||0.005,
       verbose: parseInt(document.getElementById('sc-verbose').value)||0,
     },
+    device_param: deviceParam,
     device_param: parseOptionalJson('sc-device-json', 'device_param'),
     cap_cost_pv: parseNumberOrNull('sc-pv-cost'),
     cap_cost_wt: parseNumberOrNull('sc-wt-cost'),
@@ -1403,8 +1800,35 @@ async function loadResults(runId) {
 //  RESULTS
 // ══════════════════════════════════════════════
 function destroyChart(id) {
-  if(state.chartInstances[id]) { state.chartInstances[id].destroy(); delete state.chartInstances[id]; }
+  const inst = state.chartInstances[id];
+  if(!inst) return;
+  if(inst.__echartsInstance || typeof inst.dispose === 'function') inst.dispose();
+  else if(typeof inst.destroy === 'function') inst.destroy();
+  delete state.chartInstances[id];
 }
+
+function initEChart(id) {
+  destroyChart(id);
+  const el = document.getElementById(id);
+  if(!el || !window.echarts) return null;
+  const chart = echarts.init(el, 'dark', {renderer:'canvas'});
+  chart.__echartsInstance = true;
+  state.chartInstances[id] = chart;
+  return chart;
+}
+
+function neonTooltip() {
+  return {
+    trigger:'axis',
+    backgroundColor:'rgba(5,13,26,0.92)',
+    borderColor:'rgba(0,200,255,0.35)',
+    borderWidth:1,
+    textStyle:{color:'#e8f4ff',fontSize:12},
+    axisPointer:{type:'cross',crossStyle:{color:'#00c8ff'}}
+  };
+}
+
+function chartTextStyle() { return {color:'#8ab4d4',fontSize:11}; }
 
 function renderResults() {
   if(!state.scanResults||!state.bestPoints) return;
@@ -1434,58 +1858,65 @@ function renderResults() {
 }
 
 function drawGepLcoeChart() {
-  destroyChart('gep-lcoe-chart');
   const feasible = state.scanResults.filter(r=>r.feasible&&r.lcoe_it!=null);
+  const chart = initEChart('gep-lcoe-chart');
+  if(!chart || !feasible.length) return;
   const labels = feasible.map(r=>(r.gep_actual*100).toFixed(0)+'%');
   const lcoeIT = feasible.map(r=>+(r.lcoe_it).toFixed(4));
   const lcoeTotal = feasible.map(r=>+(r.lcoe_total||r.lcoe_it).toFixed(4));
-  const kneeGep = state.bestPoints.Knee_GEP;
+  const curt = feasible.map(r=>+((r.curt_rate||0)*100).toFixed(2));
+  const kneeGepPct = (state.bestPoints.Knee_GEP||0) * 100;
+  const kneeIndex = feasible.reduce((best, r, i) => Math.abs(r.gep_actual*100-kneeGepPct) < Math.abs(feasible[best].gep_actual*100-kneeGepPct) ? i : best, 0);
 
-  state.chartInstances['gep-lcoe-chart'] = new Chart(document.getElementById('gep-lcoe-chart'), {
-    type:'line',
-    data:{
-      labels,
-      datasets:[
-        {label:'LCOE_IT (¥/kWh)',data:lcoeIT,borderColor:'#00c8ff',backgroundColor:'rgba(0,200,255,0.05)',borderWidth:2,pointRadius:4,pointHoverRadius:6,tension:0.3},
-        {label:'LCOE_total (¥/kWh)',data:lcoeTotal,borderColor:'#00ff9d',backgroundColor:'rgba(0,255,157,0.05)',borderWidth:2,borderDash:[4,3],pointRadius:3,tension:0.3},
-      ]
-    },
-    options:{
-      responsive:true,maintainAspectRatio:false,
-      plugins:{
-        legend:{labels:{color:'#8ab4d4',font:{size:12}}},
-        annotation:{annotations:{}}
+  chart.setOption({
+    backgroundColor:'transparent',
+    color:['#00c8ff','#00ff9d','#ff6b35'],
+    tooltip: neonTooltip(),
+    legend:{top:0,right:12,textStyle:chartTextStyle(),itemWidth:16,itemHeight:8},
+    toolbox:{right:8,top:28,iconStyle:{borderColor:'#4a7090'},feature:{dataZoom:{yAxisIndex:'none'},restore:{},saveAsImage:{backgroundColor:'#050d1a'}}},
+    dataZoom:[{type:'inside',start:0,end:100},{type:'slider',height:16,bottom:4,borderColor:'rgba(0,200,255,0.2)',backgroundColor:'rgba(10,22,40,0.65)',fillerColor:'rgba(0,200,255,0.18)',textStyle:chartTextStyle()}],
+    grid:{left:56,right:58,top:54,bottom:48},
+    xAxis:{type:'category',data:labels,boundaryGap:false,axisLabel:chartTextStyle(),axisLine:{lineStyle:{color:'rgba(138,180,212,0.35)'}},splitLine:{show:true,lineStyle:{color:'rgba(255,255,255,0.04)'}}},
+    yAxis:[
+      {type:'value',name:'LCOE ¥/kWh',nameTextStyle:{color:'#4a7090'},axisLabel:chartTextStyle(),splitLine:{lineStyle:{color:'rgba(255,255,255,0.05)'}}},
+      {type:'value',name:'弃电率 %',nameTextStyle:{color:'#4a7090'},axisLabel:chartTextStyle(),splitLine:{show:false}}
+    ],
+    visualMap:{show:false,dimension:0,pieces:[{lte:kneeIndex,color:'#00c8ff'},{gt:kneeIndex,color:'#00ff9d'}]},
+    series:[
+      {name:'LCOE_IT',type:'line',smooth:true,symbol:'circle',symbolSize:7,data:lcoeIT,
+        lineStyle:{width:4,shadowBlur:14,shadowColor:'rgba(0,200,255,0.65)'},
+        areaStyle:{color:new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'rgba(0,200,255,0.28)'},{offset:1,color:'rgba(0,200,255,0.02)'}])},
+        markPoint:{symbol:'pin',symbolSize:58,label:{formatter:'拐点',color:'#050d1a',fontWeight:700},data:[{coord:[labels[kneeIndex],lcoeIT[kneeIndex]],value:lcoeIT[kneeIndex]}]},
+        markLine:{symbol:'none',lineStyle:{type:'dashed',color:'#ffd600'},label:{color:'#ffd600',formatter:'推荐GEP'},data:[{xAxis:labels[kneeIndex]}]}
       },
-      scales:{
-        y:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#8ab4d4',font:{size:11}},title:{display:true,text:'LCOE (¥/kWh)',color:'#4a7090'}},
-        x:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#8ab4d4',font:{size:11}},title:{display:true,text:'绿电占比 GEP',color:'#4a7090'}}
-      }
-    }
+      {name:'LCOE_total',type:'line',smooth:true,symbol:'diamond',symbolSize:6,data:lcoeTotal,lineStyle:{width:3,type:'dashed',shadowBlur:10,shadowColor:'rgba(0,255,157,0.45)'}},
+      {name:'弃电率',type:'bar',yAxisIndex:1,data:curt,barWidth:'38%',itemStyle:{borderRadius:[5,5,0,0],color:new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'rgba(255,107,53,0.78)'},{offset:1,color:'rgba(255,107,53,0.12)'}])}}
+    ]
   });
 }
 
 function drawCapChart() {
-  destroyChart('cap-chart');
   const feasible = state.scanResults.filter(r=>r.feasible);
+  const chart = initEChart('cap-chart');
+  if(!chart || !feasible.length) return;
   const labels = feasible.map(r=>(r.gep_actual*100).toFixed(0)+'%');
-  state.chartInstances['cap-chart'] = new Chart(document.getElementById('cap-chart'), {
-    type:'bar',
-    data:{
-      labels,
-      datasets:[
-        {label:'光伏 (MW)',data:feasible.map(r=>+r.cpv.toFixed(0)),backgroundColor:'rgba(255,214,0,0.7)',stack:'s'},
-        {label:'风电 (MW)',data:feasible.map(r=>+r.cwt.toFixed(0)),backgroundColor:'rgba(0,200,255,0.7)',stack:'s'},
-        {label:'电池 (MWh/10)',data:feasible.map(r=>+(r.cba/10).toFixed(0)),backgroundColor:'rgba(0,255,157,0.6)',stack:'s'},
-        {label:'蓄冷 (MWh_th/10)',data:feasible.map(r=>+(r.cct/10).toFixed(0)),backgroundColor:'rgba(255,107,53,0.6)',stack:'s'},
-      ]
-    },
-    options:{responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{labels:{color:'#8ab4d4',font:{size:11}}}},
-      scales:{
-        y:{stacked:true,grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#8ab4d4',font:{size:11}}},
-        x:{stacked:true,grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#8ab4d4',font:{size:10}}}
-      }
-    }
+  const mk = key => feasible.map(r=>+(r[key]||0).toFixed(0));
+  chart.setOption({
+    backgroundColor:'transparent',
+    color:['#ffd600','#00c8ff','#00ff9d','#ff6b35'],
+    tooltip:{...neonTooltip(),axisPointer:{type:'shadow'}},
+    legend:{top:0,textStyle:chartTextStyle()},
+    toolbox:{right:8,top:24,iconStyle:{borderColor:'#4a7090'},feature:{magicType:{type:['line','bar']},restore:{},saveAsImage:{backgroundColor:'#050d1a'}}},
+    grid:{left:52,right:18,top:54,bottom:40},
+    xAxis:{type:'category',data:labels,axisLabel:chartTextStyle(),axisLine:{lineStyle:{color:'rgba(138,180,212,0.35)'}}},
+    yAxis:{type:'value',name:'装机/容量',nameTextStyle:{color:'#4a7090'},axisLabel:chartTextStyle(),splitLine:{lineStyle:{color:'rgba(255,255,255,0.05)'}}},
+    series:[
+      {name:'光伏 MW',type:'bar',stack:'cap',data:mk('cpv'),emphasis:{focus:'series'},itemStyle:{borderRadius:[3,3,0,0]}},
+      {name:'风电 MW',type:'bar',stack:'cap',data:mk('cwt'),emphasis:{focus:'series'}},
+      {name:'电池 MWh/10',type:'bar',stack:'cap',data:feasible.map(r=>+((r.cba||0)/10).toFixed(0)),emphasis:{focus:'series'}},
+      {name:'蓄冷 MWh_th/10',type:'bar',stack:'cap',data:feasible.map(r=>+((r.cct||0)/10).toFixed(0)),emphasis:{focus:'series'}},
+      {name:'绿电占比轨迹',type:'line',data:feasible.map(r=>+(r.gep_actual*100).toFixed(1)),smooth:true,symbolSize:5,lineStyle:{color:'#ffffff',width:2},itemStyle:{color:'#ffffff'}}
+    ]
   });
 }
 
@@ -1569,55 +2000,103 @@ function loadDispatchChart() {
     <div class="dispatch-legend-item"><div class="legend-dot" style="background:#66e0ff"></div>制冷耗电</div>
     <div class="dispatch-legend-item"><div class="legend-dot" style="background:#fff"></div>IT负荷</div>`;
 
-  state.chartInstances['dispatch-chart'] = new Chart(document.getElementById('dispatch-chart'), {
-    type:'bar',
-    data:{
-      labels:hours,
-      datasets:[
-        {label:'光伏',data:ppv,backgroundColor:'rgba(255,214,0,0.7)',stack:'supply'},
-        {label:'风电',data:pwt,backgroundColor:'rgba(0,200,255,0.7)',stack:'supply'},
-        {label:'购网电',data:pg,backgroundColor:'rgba(255,107,53,0.6)',stack:'supply'},
-        {label:'电池放电',data:pbad,backgroundColor:'rgba(0,255,157,0.6)',stack:'supply'},
-        {label:'电池充电',data:pbac.map(v=>-v),backgroundColor:'rgba(179,136,255,0.6)',stack:'supply'},
-        {label:'上网',data:pexp.map(v=>-v),backgroundColor:'rgba(255,77,77,0.45)',stack:'supply'},
-        {type:'line',label:'IT负荷',data:ld,borderColor:'#fff',borderWidth:2,pointRadius:2,fill:false,tension:0.3,stack:undefined},
-        {type:'line',label:'制冷耗电',data:pch,borderColor:'#66e0ff',borderWidth:2,borderDash:[5,3],pointRadius:2,fill:false,tension:0.3,stack:undefined},
+  const dispatch = initEChart('dispatch-chart');
+  if(dispatch) {
+    dispatch.setOption({
+      backgroundColor:'transparent',
+      color:['#ffd600','#00c8ff','#ff6b35','#00ff9d','#b388ff','#ff4d4d','#ffffff','#66e0ff'],
+      tooltip:{...neonTooltip(),axisPointer:{type:'shadow'}},
+      legend:{top:0,textStyle:chartTextStyle(),itemWidth:14,itemHeight:8},
+      toolbox:{right:8,top:24,iconStyle:{borderColor:'#4a7090'},feature:{dataZoom:{yAxisIndex:'none'},restore:{},saveAsImage:{backgroundColor:'#050d1a'}}},
+      grid:{left:50,right:20,top:58,bottom:36},
+      xAxis:{type:'category',data:hours,axisLabel:chartTextStyle(),axisLine:{lineStyle:{color:'rgba(138,180,212,0.35)'}}},
+      yAxis:{type:'value',name:'MW',nameTextStyle:{color:'#4a7090'},axisLabel:chartTextStyle(),splitLine:{lineStyle:{color:'rgba(255,255,255,0.05)'}}},
+      series:[
+        {name:'光伏',type:'bar',stack:'supply',data:ppv,itemStyle:{borderRadius:[4,4,0,0],color:new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'#ffd600'},{offset:1,color:'rgba(255,214,0,0.25)'}])}},
+        {name:'风电',type:'bar',stack:'supply',data:pwt,itemStyle:{color:new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'#00c8ff'},{offset:1,color:'rgba(0,200,255,0.22)'}])}},
+        {name:'购网电',type:'bar',stack:'supply',data:pg,itemStyle:{color:'rgba(255,107,53,0.72)'}},
+        {name:'电池放电',type:'bar',stack:'supply',data:pbad,itemStyle:{color:'rgba(0,255,157,0.68)'}},
+        {name:'电池充电',type:'bar',stack:'supply',data:pbac.map(v=>-v),itemStyle:{color:'rgba(179,136,255,0.70)'}},
+        {name:'上网',type:'bar',stack:'supply',data:pexp.map(v=>-v),itemStyle:{color:'rgba(255,77,77,0.58)'}},
+        {name:'IT负荷',type:'line',data:ld,smooth:true,symbol:'circle',symbolSize:6,lineStyle:{width:3,color:'#fff',shadowBlur:12,shadowColor:'rgba(255,255,255,0.45)'},z:10},
+        {name:'制冷耗电',type:'line',data:pch,smooth:true,symbol:'diamond',symbolSize:5,lineStyle:{width:2,type:'dashed',color:'#66e0ff'},z:9},
       ]
-    },
-    options:{responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{labels:{color:'#8ab4d4',font:{size:11}}}},
-      scales:{
-        y:{stacked:true,grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#8ab4d4'},title:{display:true,text:'MW',color:'#4a7090'}},
-        x:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#8ab4d4',font:{size:10}}}
-      }
-    }
-  });
+    });
+  }
 
   if(eba.some(v=>v>0)) {
-    state.chartInstances['bess-chart'] = new Chart(document.getElementById('bess-chart'), {
-      type:'line',
-      data:{labels:hours,datasets:[{label:'电池SOC (MWh)',data:eba.map(v=>+v.toFixed(1)),borderColor:'#00ff9d',backgroundColor:'rgba(0,255,157,0.08)',borderWidth:2,fill:true,tension:0.4,pointRadius:3}]},
-      options:{responsive:true,maintainAspectRatio:false,
-        plugins:{legend:{labels:{color:'#8ab4d4',font:{size:11}}}},
-        scales:{y:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#8ab4d4'}},x:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#8ab4d4',font:{size:10}}}}
-      }
-    });
+    const bess = initEChart('bess-chart');
+    if(bess) {
+      bess.setOption({
+        backgroundColor:'transparent',
+        color:['#00ff9d'],
+        tooltip:neonTooltip(),
+        grid:{left:50,right:20,top:20,bottom:34},
+        xAxis:{type:'category',data:hours,axisLabel:chartTextStyle(),axisLine:{lineStyle:{color:'rgba(138,180,212,0.35)'}}},
+        yAxis:{type:'value',name:'MWh',nameTextStyle:{color:'#4a7090'},axisLabel:chartTextStyle(),splitLine:{lineStyle:{color:'rgba(255,255,255,0.05)'}}},
+        series:[{name:'电池SOC',type:'line',smooth:true,symbol:'circle',symbolSize:6,data:eba.map(v=>+v.toFixed(1)),
+          lineStyle:{width:4,shadowBlur:16,shadowColor:'rgba(0,255,157,0.65)'},
+          areaStyle:{color:new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'rgba(0,255,157,0.35)'},{offset:1,color:'rgba(0,255,157,0.02)'}])}}
+        ]
+      });
+    }
   }
 }
 
 // ══════════════════════════════════════════════
 //  COMPARE
 // ══════════════════════════════════════════════
-function renderCompare() {
-  if(!state.scanResults) { document.getElementById('compare-content').innerHTML='<div style="color:var(--text3);font-size:13px">请完成仿真后查看对比</div>'; return; }
-  // Show current scan vs a simulated S1 comparison
+async function renderCompare() {
+  const selectedIds = state.compareProjectIds.length ? state.compareProjectIds : (state.currentProject ? [state.currentProject.id] : []);
+  if(selectedIds.length >= 2) {
+    document.getElementById('compare-content').innerHTML = '<div style="color:var(--text3);font-size:13px">正在加载多项目对比...</div>';
+    const series = [];
+    for(const pid of selectedIds) {
+      try {
+        const run = await findLatestCompletedRun(pid);
+        if(!run) continue;
+        const data = await api('GET', '/api/runs/'+run.id+'/results');
+        const project = state.projects.find(p=>p.id===pid);
+        series.push({project, run, best:data.best_points, scan:data.scan_result.filter(r=>r.feasible)});
+      } catch(e) { console.warn('compare load failed', pid, e); }
+    }
+    if(series.length < 2) {
+      document.getElementById('compare-content').innerHTML = '<div class="alert alert-warn">所选项目中少于2个项目有已完成仿真，请先在各项目下运行优化。</div>';
+      document.getElementById('compare-charts').style.display='none';
+      return;
+    }
+    document.getElementById('compare-charts').style.display='block';
+    const labels = [...new Set(series.flatMap(s=>s.scan.map(r=>(r.gep_actual*100).toFixed(0)+'%')))];
+    destroyChart('cmp-lcoe-chart');
+    state.chartInstances['cmp-lcoe-chart'] = new Chart(document.getElementById('cmp-lcoe-chart'), {
+      type:'line',
+      data:{labels,datasets:series.map((s,i)=>({
+        label:s.project?.name||s.run.project_id,
+        data:labels.map(l=>{ const r=s.scan.find(x=>(x.gep_actual*100).toFixed(0)+'%'===l); return r?.lcoe_it!=null?+r.lcoe_it.toFixed(4):null; }),
+        borderColor:['#00c8ff','#00ff9d','#ff6b35','#ffd600','#b388ff'][i%5],borderWidth:2,pointRadius:3,tension:0.3
+      }))},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#8ab4d4',font:{size:11}}}},scales:{y:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#8ab4d4'},title:{display:true,text:'LCOE_IT (¥/kWh)',color:'#4a7090'}},x:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#8ab4d4',font:{size:10}}}}}
+    });
+    destroyChart('cmp-curt-chart');
+    state.chartInstances['cmp-curt-chart'] = new Chart(document.getElementById('cmp-curt-chart'), {
+      type:'bar',
+      data:{labels:series.map(s=>s.project?.name||s.run.project_id),datasets:[
+        {label:'推荐点GEP(%)',data:series.map(s=>+(s.best.Knee_GEP*100).toFixed(1)),backgroundColor:'rgba(0,200,255,0.55)'},
+        {label:'推荐点LCOE(角/kWh)',data:series.map(s=>+(s.best.Knee_LCOE_IT*10).toFixed(2)),backgroundColor:'rgba(0,255,157,0.45)'}
+      ]},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#8ab4d4',font:{size:11}}}},scales:{y:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#8ab4d4'}},x:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#8ab4d4',font:{size:10}}}}}
+    });
+    document.getElementById('compare-content').innerHTML = `<div class="alert alert-info">已对比 ${series.length} 个项目的最新完成仿真。可在项目列表中勾选/取消项目。</div>`;
+    return;
+  }
+
+  if(!state.scanResults) { document.getElementById('compare-content').innerHTML='<div style="color:var(--text3);font-size:13px">请完成仿真后查看单项目方案对比，或在项目列表勾选多个项目进行对比。</div>'; return; }
   const scan = state.scanResults.filter(r=>r.feasible);
   if(!scan.length) return;
   document.getElementById('compare-charts').style.display='block';
 
   const labels = scan.map(r=>(r.gep_actual*100).toFixed(0)+'%');
   const lcoeS3 = scan.map(r=>r.lcoe_it!=null?+r.lcoe_it.toFixed(4):null);
-  // Simulated S1 (roughly 8-15% higher LCOE than S3)
   const lcoeS1 = lcoeS3.map(v=>v!=null?+(v*1.10).toFixed(4):null);
   const curtS3 = scan.map(r=>(r.curt_rate||0)*100);
   const curtS1 = curtS3.map(v=>+(v*1.2).toFixed(1));
@@ -1629,10 +2108,7 @@ function renderCompare() {
       {label:'S3 算电冷协同',data:lcoeS3,borderColor:'#00c8ff',borderWidth:2,pointRadius:3,tension:0.3},
       {label:'S1 基础储能',data:lcoeS1,borderColor:'#ff6b35',borderWidth:2,borderDash:[5,3],pointRadius:3,tension:0.3},
     ]},
-    options:{responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{labels:{color:'#8ab4d4',font:{size:11}}}},
-      scales:{y:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#8ab4d4'},title:{display:true,text:'LCOE_IT (¥/kWh)',color:'#4a7090'}},x:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#8ab4d4',font:{size:10}}}}
-    }
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#8ab4d4',font:{size:11}}}},scales:{y:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#8ab4d4'},title:{display:true,text:'LCOE_IT (¥/kWh)',color:'#4a7090'}},x:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#8ab4d4',font:{size:10}}}}}
   });
   destroyChart('cmp-curt-chart');
   state.chartInstances['cmp-curt-chart'] = new Chart(document.getElementById('cmp-curt-chart'), {
@@ -1641,18 +2117,11 @@ function renderCompare() {
       {label:'S3 弃电率',data:curtS3,borderColor:'#00ff9d',borderWidth:2,pointRadius:3,tension:0.3},
       {label:'S1 弃电率',data:curtS1,borderColor:'#ffd600',borderWidth:2,borderDash:[5,3],pointRadius:3,tension:0.3},
     ]},
-    options:{responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{labels:{color:'#8ab4d4',font:{size:11}}}},
-      scales:{y:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#8ab4d4'},title:{display:true,text:'弃电率 (%)',color:'#4a7090'}},x:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#8ab4d4',font:{size:10}}}}
-    }
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#8ab4d4',font:{size:11}}}},scales:{y:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#8ab4d4'},title:{display:true,text:'弃电率 (%)',color:'#4a7090'}},x:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#8ab4d4',font:{size:10}}}}}
   });
-
-  // Value text
-  const avgDelta = lcoeS3.filter(v=>v!=null).reduce((a,v,i)=>a+(lcoeS1[i]-v),0)/lcoeS3.filter(v=>v).length;
-  document.getElementById('compare-content').innerHTML = `
-    <div class="alert alert-success">
-      ✅ S3算电冷协同方案相比S1基础储能方案，平均降低LCOE约 <strong>${(avgDelta*100).toFixed(2)} 分/kWh</strong>（约 ${((avgDelta/lcoeS1.find(v=>v!=null))*100).toFixed(1)}%），核心价值来自算力负荷时间转移降低储能需求和弃电率。
-    </div>`;
+  const valid = lcoeS3.filter(v=>v!=null);
+  const avgDelta = valid.reduce((a,v,i)=>a+(lcoeS1[i]-v),0)/Math.max(valid.length,1);
+  document.getElementById('compare-content').innerHTML = `<div class="alert alert-success">✅ 单项目方案对比：S3 相比 S1 估算平均降低 LCOE 约 <strong>${(avgDelta*100).toFixed(2)} 分/kWh</strong>。</div>`;
 }
 
 // ══════════════════════════════════════════════
@@ -1788,16 +2257,26 @@ async function loadResourceDiag() {
   const hours = Array.from({length:24},(_,i)=>i+'h');
   const solar = data.weather_summary.solar_hourly_avg;
   const wind = data.weather_summary.wind_hourly_avg;
+  const tempDry = data.weather_summary.temp_dry_hourly_avg;
+  const tempWet = data.weather_summary.temp_wet_hourly_avg;
+  const cop = data.weather_summary.cop_hourly_avg;
   const ef = data.weather_summary.carbon_factor_hourly_avg;
 
   destroyChart('solar-chart');
   destroyChart('wind-chart');
+  destroyChart('temp-chart');
+  destroyChart('cop-chart');
   destroyChart('ef-chart');
 
   const chartOpts = {responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#8ab4d4',font:{size:10}}},x:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#8ab4d4',font:{size:9},maxRotation:0}}}};
 
   state.chartInstances['solar-chart'] = new Chart(document.getElementById('solar-chart'), {type:'line',data:{labels:hours,datasets:[{data:solar,borderColor:'#ffd600',backgroundColor:'rgba(255,214,0,0.1)',fill:true,tension:0.4,pointRadius:2}]},options:{...chartOpts}});
   state.chartInstances['wind-chart'] = new Chart(document.getElementById('wind-chart'), {type:'line',data:{labels:hours,datasets:[{data:wind,borderColor:'#00c8ff',backgroundColor:'rgba(0,200,255,0.1)',fill:true,tension:0.4,pointRadius:2}]},options:{...chartOpts}});
+  state.chartInstances['temp-chart'] = new Chart(document.getElementById('temp-chart'), {type:'line',data:{labels:hours,datasets:[
+    {label:'干球温度',data:tempDry,borderColor:'#ff6b35',backgroundColor:'rgba(255,107,53,0.08)',fill:true,tension:0.4,pointRadius:2},
+    {label:'湿球温度',data:tempWet,borderColor:'#66e0ff',backgroundColor:'rgba(102,224,255,0.06)',fill:true,tension:0.4,pointRadius:2}
+  ]},options:{...chartOpts,plugins:{legend:{labels:{color:'#8ab4d4',font:{size:11}}}}}});
+  state.chartInstances['cop-chart'] = new Chart(document.getElementById('cop-chart'), {type:'line',data:{labels:hours,datasets:[{data:cop,borderColor:'#00ff9d',backgroundColor:'rgba(0,255,157,0.1)',fill:true,tension:0.4,pointRadius:2}]},options:{...chartOpts}});
   state.chartInstances['ef-chart'] = new Chart(document.getElementById('ef-chart'), {type:'line',data:{labels:hours,datasets:[{data:ef,borderColor:'#ff6b35',backgroundColor:'rgba(255,107,53,0.1)',fill:true,tension:0.4,pointRadius:2}]},options:{...chartOpts}});
 
   const solarScore = data.weather_summary.solar_score;
@@ -1811,6 +2290,10 @@ async function loadResourceDiag() {
     <div style="margin-bottom:12px">
       <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:12px;color:var(--text2)">风能资源</span><span style="font-size:12px;color:var(--accent)">${windScore}/100</span></div>
       <div class="progress-bar"><div class="progress-fill" style="width:${windScore}%;background:linear-gradient(90deg,var(--accent),var(--accent2))"></div></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:14px 0">
+      <div style="padding:10px;background:var(--bg3);border-radius:var(--radius)"><div class="metric-label">平均干球温度</div><div style="color:var(--accent);font-family:var(--mono)">${(tempDry.reduce((a,b)=>a+b,0)/tempDry.length).toFixed(1)} °C</div></div>
+      <div style="padding:10px;background:var(--bg3);border-radius:var(--radius)"><div class="metric-label">平均制冷COP</div><div style="color:var(--accent2);font-family:var(--mono)">${(cop.reduce((a,b)=>a+b,0)/cop.length).toFixed(2)}</div></div>
     </div>
     <div style="margin-top:16px;padding:12px;background:var(--bg3);border-radius:var(--radius);border-left:3px solid ${overallScore>70?'var(--accent2)':overallScore>50?'var(--yellow)':'var(--red)'}">
       <div style="font-size:11px;color:var(--text3)">${data.name} 综合可行性评分</div>
@@ -1839,6 +2322,12 @@ function updateHomeMetrics() {
   document.getElementById('hm-cct').innerHTML=fmt(bp.Knee_Cct||0,0)+'<span class="metric-unit">MWh_th</span>';
 }
 
+window.addEventListener('resize', () => {
+  Object.values(state.chartInstances).forEach(inst => {
+    if(inst && inst.__echartsInstance && typeof inst.resize === 'function') inst.resize();
+  });
+});
+
 // ══════════════════════════════════════════════
 //  INIT
 // ══════════════════════════════════════════════
@@ -1846,6 +2335,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await checkBackendStatus();
   loadProvinces('proj-province');
   loadProvinces('diag-province');
+  renderProjectDataEditor(true);
   updateScenarioUI();
   document.getElementById('sc-gep-start').addEventListener('input', updateScenarioUI);
   document.getElementById('sc-gep-end').addEventListener('input', updateScenarioUI);
