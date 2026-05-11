@@ -304,6 +304,10 @@ def _province_payload(province_key: str):
     w = wd["w"]
     solar_avg = _weighted_hourly_average(wd["S"], w, np)
     wind_avg = _weighted_hourly_average(wd["vw"], w, np)
+    temp_dry_avg = _weighted_hourly_average(wd["Tdb"], w, np)
+    temp_wet_avg = _weighted_hourly_average(wd["Twb"], w, np)
+    from core.optimizer import cop_from_twb
+    cop_avg = _weighted_hourly_average(cop_from_twb(np.array(wd["Twb"], dtype=float)), w, np)
     carbon_avg = _weighted_hourly_average(wd["EF"], w, np)
     return {
         "key": province_key,
@@ -311,6 +315,9 @@ def _province_payload(province_key: str):
         "weather_summary": {
             "solar_hourly_avg": solar_avg,
             "wind_hourly_avg": wind_avg,
+            "temp_dry_hourly_avg": temp_dry_avg,
+            "temp_wet_hourly_avg": temp_wet_avg,
+            "cop_hourly_avg": cop_avg,
             "carbon_factor_hourly_avg": carbon_avg,
             "typical_day_weight": list(w),
             "solar_score": min(100, round(max(solar_avg) / 10)),
@@ -543,7 +550,7 @@ def run_simulation_sync(run_id: str, project_id: str, scenario: dict):
         proj = projects[project_id]
 
         import numpy as np
-        from core.optimizer import OptimizerConfig, solve_region
+        from core.optimizer import OptimizerConfig, solve_region, cop_from_twb
 
         load_info = _merge_simulation_load_info(proj, scenario)
         proj_for_run = {**proj, "load_info": load_info}
@@ -619,6 +626,10 @@ def run_simulation_sync(run_id: str, project_id: str, scenario: dict):
             "mean_it_load_mw": float(np.mean(wd.d)),
             "peak_it_load_mw": float(np.max(wd.d)),
             "chiller_cap_multiplier": cfg.chiller_cap_multiplier,
+            "weather_inputs": ["temp_dry", "temp_wet", "solar_irradiance", "wind_speed", "typical_day_weight", "grid_carbon_factor"],
+            "mean_temp_dry_degC": float(np.mean(wd.Tdb)),
+            "mean_temp_wet_degC": float(np.mean(wd.Twb)),
+            "mean_cop": float(np.mean(cop_from_twb(wd.Twb))),
             "use_storage": cfg.scenario in ("S1", "S2", "S3"),
             "use_cold_storage": cfg.scenario in ("S2", "S3"),
             "use_flex": cfg.scenario == "S3",

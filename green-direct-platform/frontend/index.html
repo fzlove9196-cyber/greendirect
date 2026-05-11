@@ -529,10 +529,23 @@ td.red { color: var(--red); }
               <label class="form-label">项目描述</label>
               <input class="form-input" id="proj-desc" placeholder="可选">
             </div>
+            <div style="font-size:12px; color:var(--accent); font-weight:600; margin:18px 0 10px">典型日气象输入（可选覆盖）</div>
+            <div class="grid2">
+              <div class="form-group">
+                <label class="form-label">干球温度 temp_dry JSON (°C)</label>
+                <textarea class="form-input form-textarea" id="proj-temp-dry-json" placeholder="24×N数组，如 [[-5,-2,...],[...]]；留空使用省份内置"></textarea>
+                <div class="help-text">MATLAB 原始输入 Tdb，对应天气文件 A1:F24，用于光伏温度修正。</div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">湿球温度 temp_wet JSON (°C)</label>
+                <textarea class="form-input form-textarea" id="proj-temp-wet-json" placeholder="24×N数组；留空使用省份内置"></textarea>
+                <div class="help-text">MATLAB 原始输入 Twb，对应 H1:M24，用于计算制冷机 COP。</div>
+              </div>
+            </div>
             <div class="form-group">
-              <label class="form-label">自定义 weather_info JSON（可选）</label>
+              <label class="form-label">完整 weather_info JSON（可选）</label>
               <textarea class="form-input form-textarea" id="proj-weather-json" placeholder='留空使用省份内置数据；可填 {"temp_dry":[[...]],"temp_wet":[[...]],"solar_irradiance":[[...]],"wind_speed":[[...]],"typical_day_weight":[...],"grid_carbon_factor":[[...] ]}'></textarea>
-              <div class="help-text">接口文档要求 24×N 典型日矩阵；输入后将覆盖省份内置气象、资源与碳因子。</div>
+              <div class="help-text">原始 MATLAB 天气工作簿包含干球温度、湿球温度、太阳辐照度、风速、典型日权重和电网碳因子；这里可一次性覆盖全部字段。</div>
             </div>
             <div class="form-group">
               <label class="form-label">自定义 tariff_info JSON（可选）</label>
@@ -764,6 +777,20 @@ td.red { color: var(--red); }
               <div class="card-title">风速（典型日均值）</div>
               <div class="chart-container" style="height:220px">
                 <canvas id="wind-chart" role="img" aria-label="风速曲线">风速曲线</canvas>
+              </div>
+            </div>
+          </div>
+          <div class="grid2">
+            <div class="card">
+              <div class="card-title">干/湿球温度（典型日均值 °C）</div>
+              <div class="chart-container" style="height:220px">
+                <canvas id="temp-chart" role="img" aria-label="干球湿球温度曲线">温度曲线</canvas>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-title">制冷机 COP（由湿球温度计算）</div>
+              <div class="chart-container" style="height:220px">
+                <canvas id="cop-chart" role="img" aria-label="制冷机COP曲线">COP曲线</canvas>
               </div>
             </div>
           </div>
@@ -1159,6 +1186,23 @@ function parseOptionalHourlyLoad(id) {
   return values;
 }
 
+function validateWeatherInfoShape(weatherInfo) {
+  const matrixFields = ['temp_dry','temp_wet','solar_irradiance','wind_speed','grid_carbon_factor'];
+  const nDay = weatherInfo.typical_day_weight?.length;
+  matrixFields.forEach(field => {
+    const value = weatherInfo[field];
+    if(value == null) return;
+    if(!Array.isArray(value) || value.length !== 24) throw new Error(`weather_info.${field} 必须是24行数组`);
+    value.forEach((row, i) => {
+      if(!Array.isArray(row)) throw new Error(`weather_info.${field} 第 ${i+1} 行必须是数组`);
+      if(nDay && row.length !== nDay) throw new Error(`weather_info.${field} 第 ${i+1} 行列数必须等于典型日权重长度 ${nDay}`);
+      row.forEach((v, j) => {
+        if(typeof v !== 'number' || !Number.isFinite(v)) throw new Error(`weather_info.${field}[${i}][${j}] 必须是数字`);
+      });
+    });
+  });
+}
+
 async function checkBackendStatus() {
   try {
     await api('GET', '/api/health');
@@ -1245,11 +1289,16 @@ async function createProject() {
   const time_step_hours = parseFloat(document.getElementById('proj-time-step').value) || 1;
   if(!name||!province_key) return alert('请填写项目名称并选择省份');
   try {
-    const weather_info = parseOptionalJson('proj-weather-json', 'weather_info');
+    const weather_info = parseOptionalJson('proj-weather-json', 'weather_info') || {};
+    const tempDry = parseOptionalJson('proj-temp-dry-json', 'temp_dry');
+    const tempWet = parseOptionalJson('proj-temp-wet-json', 'temp_wet');
+    if(tempDry) weather_info.temp_dry = tempDry;
+    if(tempWet) weather_info.temp_wet = tempWet;
+    validateWeatherInfoShape(weather_info);
     const tariff_info = parseOptionalJson('proj-tariff-json', 'tariff_info');
     const load_info = parseOptionalJson('proj-load-json', 'load_info');
     const payload = {name, province_key, region_name, data_year, typical_day_count, time_step_hours};
-    if(weather_info) payload.weather_info = weather_info;
+    if(Object.keys(weather_info).length) payload.weather_info = weather_info;
     if(tariff_info) payload.tariff_info = tariff_info;
     if(load_info) payload.load_info = load_info;
     const proj = await api('POST', '/api/projects', payload);
@@ -1888,16 +1937,26 @@ async function loadResourceDiag() {
   const hours = Array.from({length:24},(_,i)=>i+'h');
   const solar = data.weather_summary.solar_hourly_avg;
   const wind = data.weather_summary.wind_hourly_avg;
+  const tempDry = data.weather_summary.temp_dry_hourly_avg;
+  const tempWet = data.weather_summary.temp_wet_hourly_avg;
+  const cop = data.weather_summary.cop_hourly_avg;
   const ef = data.weather_summary.carbon_factor_hourly_avg;
 
   destroyChart('solar-chart');
   destroyChart('wind-chart');
+  destroyChart('temp-chart');
+  destroyChart('cop-chart');
   destroyChart('ef-chart');
 
   const chartOpts = {responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#8ab4d4',font:{size:10}}},x:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#8ab4d4',font:{size:9},maxRotation:0}}}};
 
   state.chartInstances['solar-chart'] = new Chart(document.getElementById('solar-chart'), {type:'line',data:{labels:hours,datasets:[{data:solar,borderColor:'#ffd600',backgroundColor:'rgba(255,214,0,0.1)',fill:true,tension:0.4,pointRadius:2}]},options:{...chartOpts}});
   state.chartInstances['wind-chart'] = new Chart(document.getElementById('wind-chart'), {type:'line',data:{labels:hours,datasets:[{data:wind,borderColor:'#00c8ff',backgroundColor:'rgba(0,200,255,0.1)',fill:true,tension:0.4,pointRadius:2}]},options:{...chartOpts}});
+  state.chartInstances['temp-chart'] = new Chart(document.getElementById('temp-chart'), {type:'line',data:{labels:hours,datasets:[
+    {label:'干球温度',data:tempDry,borderColor:'#ff6b35',backgroundColor:'rgba(255,107,53,0.08)',fill:true,tension:0.4,pointRadius:2},
+    {label:'湿球温度',data:tempWet,borderColor:'#66e0ff',backgroundColor:'rgba(102,224,255,0.06)',fill:true,tension:0.4,pointRadius:2}
+  ]},options:{...chartOpts,plugins:{legend:{labels:{color:'#8ab4d4',font:{size:11}}}}}});
+  state.chartInstances['cop-chart'] = new Chart(document.getElementById('cop-chart'), {type:'line',data:{labels:hours,datasets:[{data:cop,borderColor:'#00ff9d',backgroundColor:'rgba(0,255,157,0.1)',fill:true,tension:0.4,pointRadius:2}]},options:{...chartOpts}});
   state.chartInstances['ef-chart'] = new Chart(document.getElementById('ef-chart'), {type:'line',data:{labels:hours,datasets:[{data:ef,borderColor:'#ff6b35',backgroundColor:'rgba(255,107,53,0.1)',fill:true,tension:0.4,pointRadius:2}]},options:{...chartOpts}});
 
   const solarScore = data.weather_summary.solar_score;
@@ -1911,6 +1970,10 @@ async function loadResourceDiag() {
     <div style="margin-bottom:12px">
       <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:12px;color:var(--text2)">风能资源</span><span style="font-size:12px;color:var(--accent)">${windScore}/100</span></div>
       <div class="progress-bar"><div class="progress-fill" style="width:${windScore}%;background:linear-gradient(90deg,var(--accent),var(--accent2))"></div></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:14px 0">
+      <div style="padding:10px;background:var(--bg3);border-radius:var(--radius)"><div class="metric-label">平均干球温度</div><div style="color:var(--accent);font-family:var(--mono)">${(tempDry.reduce((a,b)=>a+b,0)/tempDry.length).toFixed(1)} °C</div></div>
+      <div style="padding:10px;background:var(--bg3);border-radius:var(--radius)"><div class="metric-label">平均制冷COP</div><div style="color:var(--accent2);font-family:var(--mono)">${(cop.reduce((a,b)=>a+b,0)/cop.length).toFixed(2)}</div></div>
     </div>
     <div style="margin-top:16px;padding:12px;background:var(--bg3);border-radius:var(--radius);border-left:3px solid ${overallScore>70?'var(--accent2)':overallScore>50?'var(--yellow)':'var(--red)'}">
       <div style="font-size:11px;color:var(--text3)">${data.name} 综合可行性评分</div>
