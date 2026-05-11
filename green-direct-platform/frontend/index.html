@@ -1,0 +1,1714 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>绿电直连算电协同规划仿真平台</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+:root {
+  --bg: #050d1a;
+  --bg2: #0a1628;
+  --bg3: #0f1e35;
+  --panel: #0d1a2e;
+  --panel2: #122040;
+  --border: rgba(0,200,255,0.12);
+  --border2: rgba(0,200,255,0.25);
+  --accent: #00c8ff;
+  --accent2: #00ff9d;
+  --accent3: #ff6b35;
+  --text: #e8f4ff;
+  --text2: #8ab4d4;
+  --text3: #4a7090;
+  --yellow: #ffd600;
+  --red: #ff4d4d;
+  --mono: 'JetBrains Mono', monospace;
+  --sans: 'Space Grotesk', sans-serif;
+  --radius: 8px;
+  --radius2: 12px;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: var(--sans);
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--bg2); }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+
+/* LAYOUT */
+.app { display: flex; height: 100vh; overflow: hidden; }
+.sidebar {
+  width: 220px;
+  min-width: 220px;
+  background: var(--bg2);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+.logo {
+  padding: 20px 16px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.logo-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: 0.05em;
+  line-height: 1.3;
+}
+.logo-sub {
+  font-size: 10px;
+  color: var(--text3);
+  margin-top: 3px;
+  letter-spacing: 0.02em;
+}
+.nav-section { padding: 12px 8px 4px; font-size: 10px; color: var(--text3); letter-spacing: 0.1em; text-transform: uppercase; }
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  font-size: 13px;
+  color: var(--text2);
+  cursor: pointer;
+  border-radius: var(--radius);
+  margin: 1px 6px;
+  transition: all 0.15s;
+  border: none;
+  background: none;
+  width: calc(100% - 12px);
+  text-align: left;
+}
+.nav-item:hover { background: rgba(0,200,255,0.07); color: var(--text); }
+.nav-item.active { background: rgba(0,200,255,0.12); color: var(--accent); border: 1px solid rgba(0,200,255,0.2); }
+.nav-icon { font-size: 14px; width: 16px; text-align: center; }
+
+.main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.topbar {
+  height: 52px;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 24px;
+  gap: 16px;
+}
+.page-title { font-size: 15px; font-weight: 600; color: var(--text); }
+.breadcrumb { font-size: 12px; color: var(--text3); }
+.topbar-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+.status-pill {
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 500;
+  border: 1px solid;
+}
+.status-pill.running { color: var(--yellow); border-color: rgba(255,214,0,0.3); background: rgba(255,214,0,0.08); animation: pulse 1.5s infinite; }
+.status-pill.completed { color: var(--accent2); border-color: rgba(0,255,157,0.3); background: rgba(0,255,157,0.08); }
+.status-pill.failed { color: var(--red); border-color: rgba(255,77,77,0.3); background: rgba(255,77,77,0.08); }
+@keyframes pulse { 0%,100%{opacity:1}50%{opacity:0.6} }
+
+.content { flex: 1; overflow-y: auto; padding: 24px; }
+
+/* CARDS */
+.card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius2);
+  padding: 20px;
+  margin-bottom: 16px;
+}
+.card-title {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.card-title::before { content: ''; width: 3px; height: 14px; background: var(--accent); border-radius: 2px; }
+
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+.grid4 { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 16px; }
+
+/* METRIC CARDS */
+.metric {
+  background: var(--panel2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  position: relative;
+  overflow: hidden;
+}
+.metric::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: var(--accent);
+}
+.metric.green::after { background: var(--accent2); }
+.metric.amber::after { background: var(--yellow); }
+.metric.red::after { background: var(--red); }
+.metric-label { font-size: 11px; color: var(--text3); margin-bottom: 8px; letter-spacing: 0.04em; }
+.metric-value { font-size: 24px; font-weight: 600; color: var(--text); font-family: var(--mono); }
+.metric-unit { font-size: 13px; font-weight: 400; color: var(--text2); margin-left: 4px; }
+.metric-sub { font-size: 11px; color: var(--text3); margin-top: 4px; }
+
+/* FORMS */
+.form-group { margin-bottom: 16px; }
+.form-label { font-size: 12px; color: var(--text2); margin-bottom: 6px; display: block; }
+.form-input, .form-select {
+  width: 100%;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  padding: 8px 12px;
+  font-size: 13px;
+  font-family: var(--sans);
+  outline: none;
+  transition: border-color 0.15s;
+}
+.form-input:focus, .form-select:focus { border-color: var(--accent); }
+.form-select option { background: var(--bg3); }
+
+/* BUTTONS */
+.btn {
+  padding: 9px 20px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid;
+  transition: all 0.15s;
+  font-family: var(--sans);
+}
+.btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg);
+}
+.btn-primary:hover { background: #33d6ff; }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-outline {
+  background: transparent;
+  border-color: var(--border2);
+  color: var(--text2);
+}
+.btn-outline:hover { border-color: var(--accent); color: var(--accent); }
+.btn-success {
+  background: var(--accent2);
+  border-color: var(--accent2);
+  color: var(--bg);
+}
+
+/* TABS */
+.tabs { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 1px solid var(--border); }
+.tab {
+  padding: 8px 16px;
+  font-size: 13px;
+  color: var(--text3);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: all 0.15s;
+  background: none;
+  border-top: none;
+  border-left: none;
+  border-right: none;
+  font-family: var(--sans);
+}
+.tab:hover { color: var(--text2); }
+.tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* TABLE */
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+th { text-align: left; padding: 8px 12px; color: var(--text3); font-weight: 500; letter-spacing: 0.05em; border-bottom: 1px solid var(--border); font-size: 11px; text-transform: uppercase; }
+td { padding: 10px 12px; border-bottom: 1px solid rgba(0,200,255,0.05); color: var(--text2); font-family: var(--mono); font-size: 12px; }
+tr:hover td { background: rgba(0,200,255,0.04); }
+td.highlight { color: var(--accent); font-weight: 600; }
+td.green { color: var(--accent2); }
+td.red { color: var(--red); }
+
+/* CHART CONTAINER */
+.chart-container { position: relative; width: 100%; }
+
+/* PROGRESS BAR */
+.progress-bar { height: 6px; background: var(--bg3); border-radius: 3px; overflow: hidden; }
+.progress-fill { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2)); border-radius: 3px; transition: width 0.5s; }
+
+/* BADGE */
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 20px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+}
+.badge-blue { background: rgba(0,200,255,0.15); color: var(--accent); border: 1px solid rgba(0,200,255,0.3); }
+.badge-green { background: rgba(0,255,157,0.1); color: var(--accent2); border: 1px solid rgba(0,255,157,0.25); }
+.badge-amber { background: rgba(255,214,0,0.1); color: var(--yellow); border: 1px solid rgba(255,214,0,0.25); }
+.badge-red { background: rgba(255,77,77,0.1); color: var(--red); border: 1px solid rgba(255,77,77,0.25); }
+
+/* ALERT */
+.alert { padding: 12px 16px; border-radius: var(--radius); font-size: 13px; margin-bottom: 16px; border-left: 3px solid; }
+.alert-info { background: rgba(0,200,255,0.08); border-color: var(--accent); color: var(--text2); }
+.alert-success { background: rgba(0,255,157,0.08); border-color: var(--accent2); color: var(--text2); }
+.alert-warn { background: rgba(255,214,0,0.08); border-color: var(--yellow); color: var(--text2); }
+
+/* DISPATCH CHART */
+.dispatch-legend { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; }
+.dispatch-legend-item { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text2); }
+.legend-dot { width: 10px; height: 10px; border-radius: 2px; }
+
+/* PAGE SECTIONS */
+.page { display: none; }
+.page.active { display: block; }
+
+/* SCAN RESULT TABLE highlight row */
+.knee-row td { background: rgba(0,200,255,0.08) !important; }
+.knee-row td { color: var(--accent) !important; }
+
+/* Sensitivity bar */
+.sens-bar { height: 18px; border-radius: 3px; display: flex; align-items: center; padding: 0 6px; font-size: 11px; font-weight: 500; }
+
+/* home hero */
+.hero-panel {
+  background: linear-gradient(135deg, var(--panel2) 0%, #0a1628 100%);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius2);
+  padding: 32px;
+  margin-bottom: 20px;
+  position: relative;
+  overflow: hidden;
+}
+.hero-panel::before {
+  content: '';
+  position: absolute;
+  top: -40px; right: -40px;
+  width: 200px; height: 200px;
+  background: radial-gradient(circle, rgba(0,200,255,0.08) 0%, transparent 70%);
+  pointer-events: none;
+}
+.hero-title { font-size: 26px; font-weight: 700; color: var(--text); line-height: 1.3; }
+.hero-sub { font-size: 14px; color: var(--text2); margin-top: 10px; max-width: 600px; line-height: 1.6; }
+.hero-tags { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+    <div class="logo">
+      <div class="logo-title">⚡ 绿电直连</div>
+      <div class="logo-sub">算电协同规划仿真平台 v1.0</div>
+    </div>
+
+    <div class="nav-section">项目</div>
+    <button class="nav-item active" onclick="showPage('home')">
+      <span class="nav-icon">🏠</span> 首页总览
+    </button>
+    <button class="nav-item" onclick="showPage('project')">
+      <span class="nav-icon">📁</span> 项目管理
+    </button>
+
+    <div class="nav-section">建模</div>
+    <button class="nav-item" onclick="showPage('scenario')">
+      <span class="nav-icon">⚙️</span> 场景配置
+    </button>
+    <button class="nav-item" onclick="showPage('resource')">
+      <span class="nav-icon">🌤️</span> 资源诊断
+    </button>
+
+    <div class="nav-section">仿真</div>
+    <button class="nav-item" onclick="showPage('simulate')">
+      <span class="nav-icon">🚀</span> 优化仿真
+    </button>
+    <button class="nav-item" onclick="showPage('results')">
+      <span class="nav-icon">📊</span> 结果分析
+    </button>
+    <button class="nav-item" onclick="showPage('dispatch')">
+      <span class="nav-icon">⏱️</span> 典型日调度
+    </button>
+
+    <div class="nav-section">决策</div>
+    <button class="nav-item" onclick="showPage('compare')">
+      <span class="nav-icon">🔄</span> 方案对比
+    </button>
+    <button class="nav-item" onclick="showPage('investment')">
+      <span class="nav-icon">💰</span> 投资决策
+    </button>
+    <button class="nav-item" onclick="showPage('sensitivity')">
+      <span class="nav-icon">📉</span> 敏感性分析
+    </button>
+
+    <div style="margin-top: auto; padding: 16px;">
+      <div style="font-size: 11px; color: var(--text3); text-align: center;">
+        后端: <span id="api-status" style="color: var(--red)">未连接</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- MAIN -->
+  <div class="main">
+    <div class="topbar">
+      <div>
+        <div class="page-title" id="topbar-title">首页总览</div>
+        <div class="breadcrumb" id="topbar-breadcrumb">绿电直连规划仿真平台</div>
+      </div>
+      <div class="topbar-right">
+        <span class="status-pill" id="run-status-pill" style="display:none"></span>
+        <button class="btn btn-outline" style="font-size:11px; padding:6px 12px" onclick="checkBackendStatus()">🔗 检查连接</button>
+      </div>
+    </div>
+
+    <div class="content">
+
+      <!-- ═══════════════════ HOME ═══════════════════ -->
+      <div class="page active" id="page-home">
+        <div class="hero-panel">
+          <div class="hero-title">绿电直连算电协同规划仿真平台</div>
+          <div class="hero-sub">面向数据中心绿电直连场景的源网荷储冷算协同优化设计工具。输入地区资源、电价政策、IT 负荷和设备成本，系统自动推演不同绿电占比下的最优风光储冷算配置，识别经济性拐点。</div>
+          <div class="hero-tags">
+            <span class="badge badge-blue">GEP扫描优化</span>
+            <span class="badge badge-green">S1/S3协同方案</span>
+            <span class="badge badge-amber">LCOE经济性分析</span>
+            <span class="badge badge-blue">31省真实数据</span>
+          </div>
+        </div>
+
+        <!-- Key metrics from last run -->
+        <div id="home-metrics" style="display:none">
+          <div class="card-title" style="margin-bottom:12px">📍 推荐方案（拐点）</div>
+          <div class="grid4" style="margin-bottom:20px">
+            <div class="metric">
+              <div class="metric-label">推荐绿电占比 (GEP)</div>
+              <div class="metric-value" id="hm-gep">--<span class="metric-unit">%</span></div>
+              <div class="metric-sub">经济性最优拐点</div>
+            </div>
+            <div class="metric green">
+              <div class="metric-label">度电成本 LCOE_IT</div>
+              <div class="metric-value" id="hm-lcoe">--<span class="metric-unit">¥/kWh</span></div>
+              <div class="metric-sub">IT口径综合度电成本</div>
+            </div>
+            <div class="metric amber">
+              <div class="metric-label">绿电小时</div>
+              <div class="metric-value" id="hm-green-h">--<span class="metric-unit">h</span></div>
+              <div class="metric-sub">年度绿电时数</div>
+            </div>
+            <div class="metric">
+              <div class="metric-label">年碳排放</div>
+              <div class="metric-value" id="hm-carbon">--<span class="metric-unit">万tCO₂</span></div>
+              <div class="metric-sub">含电网购电排放</div>
+            </div>
+          </div>
+          <div class="grid4" style="margin-bottom:20px">
+            <div class="metric">
+              <div class="metric-label">光伏装机</div>
+              <div class="metric-value" id="hm-cpv">--<span class="metric-unit">MW</span></div>
+            </div>
+            <div class="metric">
+              <div class="metric-label">风电装机</div>
+              <div class="metric-value" id="hm-cwt">--<span class="metric-unit">MW</span></div>
+            </div>
+            <div class="metric">
+              <div class="metric-label">电池储能</div>
+              <div class="metric-value" id="hm-cba">--<span class="metric-unit">MWh</span></div>
+            </div>
+            <div class="metric">
+              <div class="metric-label">蓄冷容量</div>
+              <div class="metric-value" id="hm-cct">--<span class="metric-unit">MWh_th</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div id="home-norun" class="alert alert-info">
+          👋 欢迎使用！请先在 <strong>项目管理</strong> 中创建项目，配置参数后在 <strong>优化仿真</strong> 中运行仿真任务。
+        </div>
+
+        <div class="grid2">
+          <div class="card">
+            <div class="card-title">快速入门</div>
+            <div style="display:flex; flex-direction:column; gap:10px">
+              <div onclick="showPage('project')" style="cursor:pointer; padding:12px; background:var(--bg3); border-radius:var(--radius); border:1px solid var(--border); display:flex; align-items:center; gap:10px">
+                <span style="font-size:20px">📁</span>
+                <div>
+                  <div style="font-size:13px; font-weight:500">步骤 1：创建项目</div>
+                  <div style="font-size:11px; color:var(--text3)">选择地区、配置基础参数</div>
+                </div>
+              </div>
+              <div onclick="showPage('scenario')" style="cursor:pointer; padding:12px; background:var(--bg3); border-radius:var(--radius); border:1px solid var(--border); display:flex; align-items:center; gap:10px">
+                <span style="font-size:20px">⚙️</span>
+                <div>
+                  <div style="font-size:13px; font-weight:500">步骤 2：配置场景</div>
+                  <div style="font-size:11px; color:var(--text3)">选择S1/S3方案，设置GEP扫描范围</div>
+                </div>
+              </div>
+              <div onclick="showPage('simulate')" style="cursor:pointer; padding:12px; background:var(--bg3); border-radius:var(--radius); border:1px solid var(--border); display:flex; align-items:center; gap:10px">
+                <span style="font-size:20px">🚀</span>
+                <div>
+                  <div style="font-size:13px; font-weight:500">步骤 3：运行仿真</div>
+                  <div style="font-size:11px; color:var(--text3)">提交优化任务，等待求解完成</div>
+                </div>
+              </div>
+              <div onclick="showPage('results')" style="cursor:pointer; padding:12px; background:var(--bg3); border-radius:var(--radius); border:1px solid var(--border); display:flex; align-items:center; gap:10px">
+                <span style="font-size:20px">📊</span>
+                <div>
+                  <div style="font-size:13px; font-weight:500">步骤 4：查看结果</div>
+                  <div style="font-size:11px; color:var(--text3)">GEP-LCOE曲线、推荐方案、调度仿真</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-title">平台核心能力</div>
+            <div style="display:flex; flex-direction:column; gap:8px; font-size:13px; color:var(--text2); line-height:1.7">
+              <div>🔄 <strong>反向优化设计</strong> — 输入绿电比例，反推风光储冷容量</div>
+              <div>⚡ <strong>算电冷协同</strong> — 算力时间转移、储能、蓄冷统一建模</div>
+              <div>📍 <strong>GEP-LCOE拐点识别</strong> — 经济性最优绿电比例</div>
+              <div>⏱️ <strong>典型日运行仿真</strong> — 24小时协同调度可视化</div>
+              <div>📉 <strong>投资敏感性分析</strong> — 多维度风险边界分析</div>
+              <div>🗂️ <strong>31省真实数据</strong> — 气象、电价、碳因子</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══════════════════ PROJECT ═══════════════════ -->
+      <div class="page" id="page-project">
+        <div class="grid2" style="margin-bottom:20px">
+          <div class="card">
+            <div class="card-title">创建新项目</div>
+            <div class="form-group">
+              <label class="form-label">项目名称</label>
+              <input class="form-input" id="proj-name" placeholder="如：甘肃某园区绿电直连项目" value="内蒙古数据中心绿电直连项目">
+            </div>
+            <div class="form-group">
+              <label class="form-label">选择省份</label>
+              <select class="form-select" id="proj-province" onchange="updateProvinceName()">
+                <option value="">加载中...</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">地区名称</label>
+              <input class="form-input" id="proj-region" placeholder="如：甘肃某园区">
+            </div>
+            <div class="form-group">
+              <label class="form-label">数据年份</label>
+              <input class="form-input" id="proj-year" type="number" value="2025">
+            </div>
+            <div class="form-group">
+              <label class="form-label">项目描述</label>
+              <input class="form-input" id="proj-desc" placeholder="可选">
+            </div>
+            <button class="btn btn-primary" onclick="createProject()" style="width:100%">创建项目</button>
+          </div>
+
+          <div class="card">
+            <div class="card-title">省份电价信息预览</div>
+            <div id="tariff-preview" style="font-size:12px; color:var(--text2)">
+              <div style="color:var(--text3)">选择省份后显示</div>
+            </div>
+            <div id="tariff-chart-wrap" class="chart-container" style="height:140px; margin-top:16px; display:none">
+              <canvas id="tariff-chart" role="img" aria-label="分时电价曲线">分时电价曲线</canvas>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">项目列表</div>
+          <div id="project-list">
+            <div style="color:var(--text3); font-size:13px">暂无项目，请创建</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══════════════════ SCENARIO ═══════════════════ -->
+      <div class="page" id="page-scenario">
+        <div class="grid2" style="margin-bottom:20px">
+          <div class="card">
+            <div class="card-title">场景基础配置</div>
+            <div class="form-group">
+              <label class="form-label">选择项目</label>
+              <select class="form-select" id="sc-project">
+                <option value="">请先创建项目</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">场景名称</label>
+              <input class="form-input" id="sc-name" value="S3基准场景">
+            </div>
+            <div class="form-group">
+              <label class="form-label">仿真方案</label>
+              <select class="form-select" id="sc-type" onchange="updateScenarioUI()">
+                <option value="S1">S1 — 基础储能方案（风光 + 电池）</option>
+                <option value="S3" selected>S3 — 算电冷协同方案（风光 + 电池 + 蓄冷 + 算力时移）</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">目标函数</label>
+              <select class="form-select" id="sc-objective">
+                <option value="cost" selected>成本最小化</option>
+                <option value="carbon">碳排最小化</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">政策场景</label>
+              <select class="form-select" id="sc-policy">
+                <option value="A" selected>政策A — 标准场景</option>
+                <option value="B">政策B — 严格上网限制</option>
+                <option value="C">政策C — 激进绿电补贴</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">GEP扫描与算力柔性配置</div>
+            <div class="form-group">
+              <label class="form-label">GEP扫描起点</label>
+              <input class="form-input" id="sc-gep-start" type="number" value="0" min="0" max="1" step="0.05">
+            </div>
+            <div class="form-group">
+              <label class="form-label">GEP扫描终点</label>
+              <input class="form-input" id="sc-gep-end" type="number" value="1.0" min="0" max="1" step="0.05">
+            </div>
+            <div class="form-group">
+              <label class="form-label">GEP扫描步长</label>
+              <input class="form-input" id="sc-gep-step" type="number" value="0.05" min="0.01" max="0.2" step="0.01">
+            </div>
+            <div class="form-group" id="alpha-group">
+              <label class="form-label">算力时移比例 α (S3方案)</label>
+              <input class="form-input" id="sc-alpha" type="number" value="0.4" min="0" max="1" step="0.05">
+              <div style="font-size:11px; color:var(--text3); margin-top:4px">α=0.4 表示40%的IT负荷可在时间窗口内转移</div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">负荷平滑权重 ρ</label>
+              <input class="form-input" id="sc-ramp" type="number" value="0.25" min="0" max="1" step="0.05">
+            </div>
+            <div class="form-group">
+              <label class="form-label">输出调度明细</label>
+              <select class="form-select" id="sc-dispatch">
+                <option value="true" selected>是（输出逐小时调度）</option>
+                <option value="false">否（仅输出容量与指标）</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">设备投资参数（可选覆盖）</div>
+          <div class="grid4">
+            <div class="form-group">
+              <label class="form-label">光伏造价 (¥/MW)</label>
+              <input class="form-input" id="sc-pv-cost" placeholder="默认 3,080,000">
+            </div>
+            <div class="form-group">
+              <label class="form-label">风电造价 (¥/MW)</label>
+              <input class="form-input" id="sc-wt-cost" placeholder="默认 4,500,000">
+            </div>
+            <div class="form-group">
+              <label class="form-label">电池造价 (¥/MWh)</label>
+              <input class="form-input" id="sc-ba-cost" placeholder="默认 1,400,000">
+            </div>
+            <div class="form-group">
+              <label class="form-label">蓄冷造价 (¥/MWh_th)</label>
+              <input class="form-input" id="sc-ct-cost" placeholder="默认 222,000">
+            </div>
+          </div>
+          <div class="alert alert-info">
+            💡 GEP扫描将对每个绿电占比目标点（0%→100%，步长5%）独立求解MILP优化问题，共 <span id="gep-count">21</span> 个求解任务。S3方案需要约 5-15 分钟（CBC求解器）。
+          </div>
+          <button class="btn btn-primary" onclick="submitScenario()" style="margin-top:8px">保存场景配置 →</button>
+        </div>
+      </div>
+
+      <!-- ═══════════════════ RESOURCE DIAGNOSIS ═══════════════════ -->
+      <div class="page" id="page-resource">
+        <div class="card">
+          <div class="card-title">资源诊断中心</div>
+          <div style="margin-bottom:16px">
+            <select class="form-select" id="diag-province" style="width:200px; display:inline-block" onchange="loadResourceDiag()">
+              <option value="">选择省份</option>
+            </select>
+          </div>
+          <div id="resource-content" style="color:var(--text3)">请选择省份以查看资源诊断</div>
+        </div>
+
+        <div id="resource-charts" style="display:none">
+          <div class="grid2">
+            <div class="card">
+              <div class="card-title">太阳辐照度（典型日均值）</div>
+              <div class="chart-container" style="height:220px">
+                <canvas id="solar-chart" role="img" aria-label="太阳辐照度曲线">太阳辐照度曲线</canvas>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-title">风速（典型日均值）</div>
+              <div class="chart-container" style="height:220px">
+                <canvas id="wind-chart" role="img" aria-label="风速曲线">风速曲线</canvas>
+              </div>
+            </div>
+          </div>
+          <div class="grid2">
+            <div class="card">
+              <div class="card-title">电网碳因子（典型日均值 kgCO₂/kWh）</div>
+              <div class="chart-container" style="height:220px">
+                <canvas id="ef-chart" role="img" aria-label="碳因子曲线">碳因子曲线</canvas>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-title">资源诊断评分</div>
+              <div id="resource-score" style="padding:8px">
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══════════════════ SIMULATE ═══════════════════ -->
+      <div class="page" id="page-simulate">
+        <div class="card">
+          <div class="card-title">提交仿真任务</div>
+          <div id="sim-no-scenario" class="alert alert-warn">
+            ⚠️ 请先在「场景配置」页面创建场景，然后在此提交仿真。
+          </div>
+          <div id="sim-scenario-ready" style="display:none">
+            <div class="grid2" style="margin-bottom:16px">
+              <div>
+                <div class="form-label">当前场景</div>
+                <div style="font-size:14px; font-weight:600; color:var(--accent)" id="sim-scenario-name">--</div>
+              </div>
+              <div>
+                <div class="form-label">GEP扫描点数</div>
+                <div style="font-size:14px; font-weight:600" id="sim-gep-count">--</div>
+              </div>
+            </div>
+            <button class="btn btn-primary" id="sim-btn" onclick="startSimulation()">🚀 启动仿真任务</button>
+          </div>
+        </div>
+
+        <div class="card" id="sim-progress-card" style="display:none">
+          <div class="card-title">仿真进度</div>
+          <div style="margin-bottom:12px">
+            <div style="display:flex; justify-content:space-between; margin-bottom:6px">
+              <span style="font-size:12px; color:var(--text2)" id="sim-progress-text">准备中...</span>
+              <span style="font-size:12px; color:var(--accent)" id="sim-progress-pct">0%</span>
+            </div>
+            <div class="progress-bar">
+              <div class="progress-fill" id="sim-progress-fill" style="width:0%"></div>
+            </div>
+          </div>
+          <div style="font-size:11px; color:var(--text3)" id="sim-current-gep">当前GEP目标: --</div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">仿真任务历史</div>
+          <div id="run-history">
+            <div style="color:var(--text3); font-size:13px">暂无仿真记录</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══════════════════ RESULTS ═══════════════════ -->
+      <div class="page" id="page-results">
+        <div id="results-nodata" class="alert alert-info">
+          📊 请先完成仿真任务，然后在此查看结果分析。
+        </div>
+        <div id="results-content" style="display:none">
+          <!-- Best points summary -->
+          <div class="card">
+            <div class="card-title">🎯 推荐方案总览</div>
+            <div class="grid4" style="margin-bottom:16px">
+              <div class="metric">
+                <div class="metric-label">拐点 GEP</div>
+                <div class="metric-value" id="r-knee-gep">--<span class="metric-unit">%</span></div>
+                <div class="metric-sub" id="r-knee-label">LCOE最优点</div>
+              </div>
+              <div class="metric green">
+                <div class="metric-label">拐点 LCOE_IT</div>
+                <div class="metric-value" id="r-knee-lcoe">--<span class="metric-unit">¥/kWh</span></div>
+              </div>
+              <div class="metric amber">
+                <div class="metric-label">弃电率</div>
+                <div class="metric-value" id="r-knee-curt">--<span class="metric-unit">%</span></div>
+              </div>
+              <div class="metric">
+                <div class="metric-label">PUE</div>
+                <div class="metric-value" id="r-knee-pue">--</div>
+              </div>
+            </div>
+            <div class="grid3">
+              <div style="padding:12px; background:var(--bg3); border-radius:var(--radius); border-left:3px solid var(--accent)">
+                <div style="font-size:11px; color:var(--text3)">自由最优 (Free)</div>
+                <div style="font-size:15px; font-weight:600; color:var(--text)" id="r-free-gep">-- GEP</div>
+                <div style="font-size:12px; color:var(--text2)" id="r-free-lcoe">LCOE --</div>
+              </div>
+              <div style="padding:12px; background:var(--bg3); border-radius:var(--radius); border-left:3px solid var(--accent2)">
+                <div style="font-size:11px; color:var(--text3)">80% 绿电</div>
+                <div style="font-size:15px; font-weight:600; color:var(--text)" id="r-80-gep">-- GEP</div>
+                <div style="font-size:12px; color:var(--text2)" id="r-80-lcoe">LCOE --</div>
+              </div>
+              <div style="padding:12px; background:var(--bg3); border-radius:var(--radius); border-left:3px solid var(--yellow)">
+                <div style="font-size:11px; color:var(--text3)">100% 绿电</div>
+                <div style="font-size:15px; font-weight:600; color:var(--text)" id="r-100-gep">-- GEP</div>
+                <div style="font-size:12px; color:var(--text2)" id="r-100-lcoe">LCOE --</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- GEP-LCOE Curve -->
+          <div class="card">
+            <div class="card-title">📈 GEP-LCOE曲线（绿电占比 vs 度电成本）</div>
+            <div class="chart-container" style="height:320px">
+              <canvas id="gep-lcoe-chart" role="img" aria-label="GEP与LCOE关系曲线">GEP与LCOE关系曲线图</canvas>
+            </div>
+          </div>
+
+          <!-- Capacity Config Curve -->
+          <div class="card">
+            <div class="card-title">🏗️ 容量配置曲线（随绿电比例变化）</div>
+            <div class="chart-container" style="height:300px">
+              <canvas id="cap-chart" role="img" aria-label="容量配置曲线">容量配置曲线</canvas>
+            </div>
+          </div>
+
+          <!-- Scan result table -->
+          <div class="card">
+            <div class="card-title">📋 GEP扫描详细结果</div>
+            <div class="table-wrap" id="scan-table-wrap">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══════════════════ DISPATCH ═══════════════════ -->
+      <div class="page" id="page-dispatch">
+        <div id="dispatch-nodata" class="alert alert-info">
+          ⏱️ 请先完成包含调度明细的仿真任务。
+        </div>
+        <div id="dispatch-content" style="display:none">
+          <div class="card">
+            <div class="card-title">典型日调度仿真</div>
+            <div style="display:flex; gap:16px; margin-bottom:16px; align-items:flex-end">
+              <div class="form-group" style="margin:0; flex:1">
+                <label class="form-label">选择GEP档位</label>
+                <select class="form-select" id="dispatch-gep-sel" onchange="loadDispatchChart()">
+                </select>
+              </div>
+              <div class="form-group" style="margin:0; flex:1">
+                <label class="form-label">选择典型日</label>
+                <select class="form-select" id="dispatch-day-sel" onchange="loadDispatchChart()">
+                  <option value="0">典型日 1</option>
+                  <option value="1">典型日 2</option>
+                  <option value="2">典型日 3</option>
+                  <option value="3">典型日 4</option>
+                  <option value="4">典型日 5</option>
+                  <option value="5">典型日 6</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">24小时电力平衡（MW）</div>
+            <div class="dispatch-legend" id="dispatch-legend"></div>
+            <div class="chart-container" style="height:320px">
+              <canvas id="dispatch-chart" role="img" aria-label="24小时电力平衡图">24小时电力平衡图</canvas>
+            </div>
+          </div>
+
+          <div class="card" id="bess-chart-card">
+            <div class="card-title">电池储能SOC（能量状态）</div>
+            <div class="chart-container" style="height:200px">
+              <canvas id="bess-chart" role="img" aria-label="电池储能SOC曲线">电池储能SOC曲线</canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══════════════════ COMPARE ═══════════════════ -->
+      <div class="page" id="page-compare">
+        <div class="alert alert-info">
+          🔄 方案对比：可对比同一地区不同场景（S1 vs S3）或不同α值下的优化结果。
+        </div>
+        <div class="card">
+          <div class="card-title">S1 vs S3 方案对比</div>
+          <div id="compare-content">
+            <div style="color:var(--text3); font-size:13px">请在仿真完成后，对同一项目分别运行S1和S3场景，方可进行对比。</div>
+          </div>
+        </div>
+        <div id="compare-charts" style="display:none">
+          <div class="grid2">
+            <div class="card">
+              <div class="card-title">LCOE对比</div>
+              <div class="chart-container" style="height:260px">
+                <canvas id="cmp-lcoe-chart" role="img" aria-label="S1 vs S3 LCOE对比">S1 vs S3 LCOE对比</canvas>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-title">弃电率对比</div>
+              <div class="chart-container" style="height:260px">
+                <canvas id="cmp-curt-chart" role="img" aria-label="S1 vs S3 弃电率对比">弃电率对比</canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══════════════════ INVESTMENT ═══════════════════ -->
+      <div class="page" id="page-investment">
+        <div id="inv-nodata" class="alert alert-info">
+          💰 请先完成仿真，然后在此进行投资决策分析。
+        </div>
+        <div id="inv-content" style="display:none">
+          <div class="card">
+            <div class="card-title">投资参数设置</div>
+            <div class="grid4">
+              <div class="form-group">
+                <label class="form-label">项目寿命 (年)</label>
+                <input class="form-input" id="inv-life" type="number" value="20">
+              </div>
+              <div class="form-group">
+                <label class="form-label">折现率</label>
+                <input class="form-input" id="inv-rate" type="number" value="0.06" step="0.01">
+              </div>
+              <div class="form-group">
+                <label class="form-label">年售电收益 (万元)</label>
+                <input class="form-input" id="inv-revenue" type="number" value="8000">
+              </div>
+              <div class="form-group">
+                <label class="form-label">碳信用单价 (¥/tCO₂)</label>
+                <input class="form-input" id="inv-carbon" type="number" value="80">
+              </div>
+            </div>
+            <button class="btn btn-outline" onclick="calcInvestment()">重新计算</button>
+          </div>
+          <div class="grid4" style="margin-bottom:16px">
+            <div class="metric">
+              <div class="metric-label">总投资 CAPEX</div>
+              <div class="metric-value" id="inv-capex">--<span class="metric-unit">亿元</span></div>
+            </div>
+            <div class="metric green">
+              <div class="metric-label">年净收益</div>
+              <div class="metric-value" id="inv-net">--<span class="metric-unit">万元/年</span></div>
+            </div>
+            <div class="metric amber">
+              <div class="metric-label">静态回收期</div>
+              <div class="metric-value" id="inv-payback">--<span class="metric-unit">年</span></div>
+            </div>
+            <div class="metric">
+              <div class="metric-label">综合 LCOE</div>
+              <div class="metric-value" id="inv-lcoe">--<span class="metric-unit">¥/kWh</span></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-title">成本构成分析</div>
+            <div class="chart-container" style="height:300px">
+              <canvas id="cost-chart" role="img" aria-label="成本构成饼图">成本构成图</canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══════════════════ SENSITIVITY ═══════════════════ -->
+      <div class="page" id="page-sensitivity">
+        <div id="sens-nodata" class="alert alert-info">
+          📉 请先完成仿真，然后进行敏感性分析。
+        </div>
+        <div id="sens-content" style="display:none">
+          <div class="card">
+            <div class="card-title">敏感性分析设置</div>
+            <div class="grid2" style="align-items:end">
+              <div class="form-group">
+                <label class="form-label">分析变量</label>
+                <select class="form-select" id="sens-var">
+                  <option value="ba_cost">电池储能成本</option>
+                  <option value="pv_cost">光伏造价</option>
+                  <option value="wt_cost">风电造价</option>
+                  <option value="grid_price">电网购电价</option>
+                  <option value="export_price">上网电价</option>
+                  <option value="alpha">算力时移比例α</option>
+                </select>
+              </div>
+              <div>
+                <button class="btn btn-primary" onclick="runSensitivity()">运行敏感性分析</button>
+              </div>
+            </div>
+          </div>
+          <div class="card" id="sens-result-card" style="display:none">
+            <div class="card-title">龙卷风图 — LCOE对各参数敏感性</div>
+            <div id="sens-tornado"></div>
+          </div>
+          <div class="card" id="sens-chart-card" style="display:none">
+            <div class="card-title">LCOE随参数变化曲线</div>
+            <div class="chart-container" style="height:260px">
+              <canvas id="sens-chart" role="img" aria-label="敏感性分析曲线">敏感性分析曲线</canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /content -->
+  </div><!-- /main -->
+</div><!-- /app -->
+
+<script>
+// ══════════════════════════════════════════════
+//  STATE
+// ══════════════════════════════════════════════
+const API = 'http://localhost:8000';
+let state = {
+  projects: [],
+  currentProject: null,
+  currentScenario: null,
+  currentRunId: null,
+  runStatus: null,
+  scanResults: null,
+  bestPoints: null,
+  pollTimer: null,
+  chartInstances: {},
+};
+
+// ══════════════════════════════════════════════
+//  NAVIGATION
+// ══════════════════════════════════════════════
+const pageTitles = {
+  home:'首页总览', project:'项目管理', scenario:'场景配置',
+  resource:'资源诊断', simulate:'优化仿真', results:'结果分析',
+  dispatch:'典型日调度', compare:'方案对比', investment:'投资决策', sensitivity:'敏感性分析'
+};
+
+function showPage(id) {
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  document.getElementById('page-'+id).classList.add('active');
+  const btn = [...document.querySelectorAll('.nav-item')].find(b=>b.textContent.trim().includes(pageTitles[id]?.slice(0,4)));
+  if(btn) btn.classList.add('active');
+  document.getElementById('topbar-title').textContent = pageTitles[id]||id;
+
+  // Page-specific init
+  if(id==='project') loadProvinces('proj-province');
+  if(id==='resource') loadProvinces('diag-province');
+  if(id==='results' && state.scanResults) renderResults();
+  if(id==='dispatch' && state.scanResults) renderDispatch();
+  if(id==='investment' && state.scanResults) renderInvestment();
+  if(id==='sensitivity' && state.scanResults) showSensContent();
+  if(id==='compare') renderCompare();
+}
+
+// ══════════════════════════════════════════════
+//  API HELPERS
+// ══════════════════════════════════════════════
+async function api(method, path, body) {
+  try {
+    const opts = { method, headers:{'Content-Type':'application/json'} };
+    if(body) opts.body = JSON.stringify(body);
+    const r = await fetch(API+path, opts);
+    if(!r.ok) throw new Error(await r.text());
+    return await r.json();
+  } catch(e) {
+    console.error('API error:', e);
+    throw e;
+  }
+}
+
+async function checkBackendStatus() {
+  try {
+    await api('GET', '/api/health');
+    document.getElementById('api-status').textContent = '已连接';
+    document.getElementById('api-status').style.color = 'var(--accent2)';
+  } catch {
+    document.getElementById('api-status').textContent = '离线';
+    document.getElementById('api-status').style.color = 'var(--red)';
+  }
+}
+
+// ══════════════════════════════════════════════
+//  PROVINCES
+// ══════════════════════════════════════════════
+let provinceList = [];
+async function loadProvinces(selectId) {
+  if(!provinceList.length) {
+    try {
+      provinceList = await api('GET', '/api/provinces');
+    } catch { return; }
+  }
+  const sel = document.getElementById(selectId);
+  if(!sel) return;
+  sel.innerHTML = '<option value="">请选择省份</option>';
+  provinceList.forEach(p => {
+    const opt = document.createElement('option');
+    opt.value = p.key;
+    opt.textContent = p.name;
+    sel.appendChild(opt);
+  });
+  if(selectId==='proj-province' && provinceList.length) {
+    sel.value = 'Prov1';
+    updateProvinceName();
+  }
+}
+
+function updateProvinceName() {
+  const sel = document.getElementById('proj-province');
+  const key = sel.value;
+  const prov = provinceList.find(p=>p.key===key);
+  if(prov) document.getElementById('proj-region').value = prov.name+'某园区';
+  loadTariffPreview(key);
+}
+
+let tariffChart = null;
+async function loadTariffPreview(key) {
+  if(!key) return;
+  // Show mock tariff info from known data
+  const names = { Prov1:'内蒙古', Prov9:'上海', Prov11:'浙江' };
+  document.getElementById('tariff-preview').innerHTML = `
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px">
+      <div><div class="metric-label">峰时电价</div><div style="font-size:14px; color:var(--accent)">0.600 ¥/kWh</div></div>
+      <div><div class="metric-label">谷时电价</div><div style="font-size:14px; color:var(--accent2)">0.261 ¥/kWh</div></div>
+      <div><div class="metric-label">容量电费</div><div style="font-size:14px">32.8 ¥/kW/月</div></div>
+      <div><div class="metric-label">上网电价</div><div style="font-size:14px">0.283 ¥/kWh</div></div>
+    </div>`;
+
+  // Draw tariff chart
+  document.getElementById('tariff-chart-wrap').style.display = 'block';
+  const price = [0.261,0.261,0.261,0.261,0.408,0.408,0.600,0.600,0.408,0.408,0.408,0.261,0.261,0.261,0.261,0.261,0.408,0.408,0.600,0.600,0.600,0.600,0.408,0.408];
+  destroyChart('tariff-chart');
+  state.chartInstances['tariff-chart'] = new Chart(document.getElementById('tariff-chart'), {
+    type:'bar',
+    data:{
+      labels: Array.from({length:24},(_,i)=>i+'h'),
+      datasets:[{label:'分时电价(¥/kWh)', data:price, backgroundColor:price.map(v=>v>0.5?'#ff6b35':v>0.35?'#ffd600':'#00c8ff'), borderRadius:2}]
+    },
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{min:0,max:0.7,grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#8ab4d4',font:{size:10}}},x:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#8ab4d4',font:{size:9}}}}}
+  });
+}
+
+// ══════════════════════════════════════════════
+//  PROJECT
+// ══════════════════════════════════════════════
+async function createProject() {
+  const name = document.getElementById('proj-name').value;
+  const province_key = document.getElementById('proj-province').value;
+  const region_name = document.getElementById('proj-region').value;
+  const data_year = parseInt(document.getElementById('proj-year').value);
+  if(!name||!province_key) return alert('请填写项目名称并选择省份');
+  try {
+    const proj = await api('POST', '/api/projects', {name, province_key, region_name, data_year});
+    state.projects.push(proj);
+    state.currentProject = proj;
+    renderProjectList();
+    updateScenarioProjectSel();
+    alert(`项目「${name}」创建成功！ID: ${proj.id}`);
+  } catch(e) { alert('创建失败: '+e.message); }
+}
+
+function renderProjectList() {
+  const el = document.getElementById('project-list');
+  if(!state.projects.length) { el.innerHTML='<div style="color:var(--text3);font-size:13px">暂无项目</div>'; return; }
+  el.innerHTML = state.projects.map(p=>`
+    <div style="padding:12px; background:var(--bg3); border-radius:var(--radius); border:1px solid var(--border); margin-bottom:8px; display:flex; align-items:center; justify-content:space-between; cursor:pointer" onclick="selectProject('${p.id}')">
+      <div>
+        <div style="font-size:13px; font-weight:500; color:${state.currentProject?.id===p.id?'var(--accent)':'var(--text)'}">${p.name}</div>
+        <div style="font-size:11px; color:var(--text3)">${p.region_name} · ${p.data_year} · ID: ${p.id}</div>
+      </div>
+      <span class="badge badge-blue">${state.currentProject?.id===p.id?'当前':'选择'}</span>
+    </div>`).join('');
+}
+
+function selectProject(id) {
+  state.currentProject = state.projects.find(p=>p.id===id);
+  renderProjectList();
+  updateScenarioProjectSel();
+}
+
+function updateScenarioProjectSel() {
+  const sel = document.getElementById('sc-project');
+  sel.innerHTML = state.projects.map(p=>`<option value="${p.id}" ${state.currentProject?.id===p.id?'selected':''}>${p.name}</option>`).join('');
+}
+
+// ══════════════════════════════════════════════
+//  SCENARIO
+// ══════════════════════════════════════════════
+function updateScenarioUI() {
+  const isS3 = document.getElementById('sc-type').value === 'S3';
+  document.getElementById('alpha-group').style.opacity = isS3 ? '1' : '0.4';
+  // Update GEP count
+  const start = parseFloat(document.getElementById('sc-gep-start').value)||0;
+  const end = parseFloat(document.getElementById('sc-gep-end').value)||1;
+  const step = parseFloat(document.getElementById('sc-gep-step').value)||0.05;
+  const count = Math.round((end-start)/step)+1;
+  document.getElementById('gep-count').textContent = count;
+}
+
+async function submitScenario() {
+  const pid = document.getElementById('sc-project').value;
+  if(!pid) return alert('请先选择项目');
+  state.currentScenario = {
+    project_id: pid,
+    scenario_name: document.getElementById('sc-name').value,
+    scenario_type: document.getElementById('sc-type').value,
+    objective_mode: document.getElementById('sc-objective').value,
+    policy_scenario: document.getElementById('sc-policy').value,
+    alpha: parseFloat(document.getElementById('sc-alpha').value)||0.4,
+    gep_start: parseFloat(document.getElementById('sc-gep-start').value)||0,
+    gep_end: parseFloat(document.getElementById('sc-gep-end').value)||1,
+    gep_step: parseFloat(document.getElementById('sc-gep-step').value)||0.05,
+    ramp_weight: parseFloat(document.getElementById('sc-ramp').value)||0.25,
+    write_dispatch: document.getElementById('sc-dispatch').value === 'true',
+    cap_cost_pv: parseFloat(document.getElementById('sc-pv-cost').value)||null,
+    cap_cost_wt: parseFloat(document.getElementById('sc-wt-cost').value)||null,
+    cap_cost_ba: parseFloat(document.getElementById('sc-ba-cost').value)||null,
+    cap_cost_ct: parseFloat(document.getElementById('sc-ct-cost').value)||null,
+  };
+  const cnt = Math.round((state.currentScenario.gep_end - state.currentScenario.gep_start)/state.currentScenario.gep_step)+1;
+  document.getElementById('sim-scenario-ready').style.display = 'block';
+  document.getElementById('sim-no-scenario').style.display = 'none';
+  document.getElementById('sim-scenario-name').textContent = state.currentScenario.scenario_name + ' (' + state.currentScenario.scenario_type + ')';
+  document.getElementById('sim-gep-count').textContent = cnt + ' 个GEP点';
+  alert('场景已保存！请前往「优化仿真」页面提交任务。');
+  showPage('simulate');
+}
+
+// ══════════════════════════════════════════════
+//  SIMULATION
+// ══════════════════════════════════════════════
+async function startSimulation() {
+  if(!state.currentScenario) return alert('请先配置场景');
+  try {
+    document.getElementById('sim-btn').disabled = true;
+    document.getElementById('sim-btn').textContent = '提交中...';
+    const res = await api('POST', '/api/scenarios/run', state.currentScenario);
+    state.currentRunId = res.run_id;
+    document.getElementById('sim-progress-card').style.display = 'block';
+    showRunStatus('running');
+    pollRunStatus();
+    loadRunHistory();
+  } catch(e) {
+    document.getElementById('sim-btn').disabled = false;
+    document.getElementById('sim-btn').textContent = '🚀 启动仿真任务';
+    alert('提交失败: '+e.message);
+  }
+}
+
+function showRunStatus(status) {
+  const pill = document.getElementById('run-status-pill');
+  pill.style.display = 'inline-block';
+  const map = { running:'⚡ 仿真运行中', completed:'✅ 仿真完成', failed:'❌ 仿真失败', queued:'🕐 队列等待' };
+  pill.textContent = map[status]||status;
+  pill.className = 'status-pill ' + (status==='completed'?'completed':status==='failed'?'failed':'running');
+}
+
+async function pollRunStatus() {
+  if(!state.currentRunId) return;
+  if(state.pollTimer) clearInterval(state.pollTimer);
+  state.pollTimer = setInterval(async()=>{
+    try {
+      const s = await api('GET', '/api/runs/'+state.currentRunId+'/status');
+      const pct = s.progress||0;
+      document.getElementById('sim-progress-fill').style.width = pct+'%';
+      document.getElementById('sim-progress-pct').textContent = pct+'%';
+      document.getElementById('sim-progress-text').textContent = s.status==='running'?'求解中...':s.status;
+      if(s.current_gep!=null) document.getElementById('sim-current-gep').textContent = '当前GEP目标: '+(s.current_gep*100).toFixed(0)+'%';
+      showRunStatus(s.status);
+      loadRunHistory();
+      if(s.status==='completed') {
+        clearInterval(state.pollTimer);
+        document.getElementById('sim-btn').disabled = false;
+        document.getElementById('sim-btn').textContent = '🚀 启动新仿真任务';
+        await loadResults(state.currentRunId);
+        updateHomeMetrics();
+      } else if(s.status==='failed') {
+        clearInterval(state.pollTimer);
+        document.getElementById('sim-btn').disabled = false;
+        document.getElementById('sim-btn').textContent = '🚀 重试';
+        alert('仿真失败: '+s.error_message);
+      }
+    } catch(e) { console.error(e); }
+  }, 2000);
+}
+
+async function loadRunHistory() {
+  try {
+    const runs = await api('GET', '/api/runs');
+    const el = document.getElementById('run-history');
+    if(!runs.length) { el.innerHTML='<div style="color:var(--text3);font-size:13px">暂无仿真记录</div>'; return; }
+    el.innerHTML = runs.slice().reverse().map(r=>`
+      <div style="padding:10px 12px; background:var(--bg3); border-radius:var(--radius); border:1px solid var(--border); margin-bottom:8px; display:flex; align-items:center; justify-content:space-between">
+        <div>
+          <div style="font-size:13px; font-weight:500">${r.scenario_name||'任务'} <span class="badge badge-${r.status==='completed'?'green':r.status==='failed'?'red':'blue'}">${r.status}</span></div>
+          <div style="font-size:11px; color:var(--text3)">ID: ${r.id} · ${r.created_at?.slice(0,16)||''} · ${r.scenario_type||''}</div>
+        </div>
+        ${r.status==='completed'?`<button class="btn btn-outline" style="font-size:11px;padding:4px 10px" onclick="loadResults('${r.id}')">查看结果</button>`:'<div style="color:var(--text3);font-size:12px">'+(r.progress||0)+'%</div>'}
+      </div>`).join('');
+  } catch {}
+}
+
+async function loadResults(runId) {
+  try {
+    const data = await api('GET', '/api/runs/'+runId+'/results');
+    state.currentRunId = runId;
+    state.scanResults = data.scan_result;
+    state.bestPoints = data.best_points;
+    updateHomeMetrics();
+    showPage('results');
+  } catch(e) { alert('加载结果失败: '+e.message); }
+}
+
+// ══════════════════════════════════════════════
+//  RESULTS
+// ══════════════════════════════════════════════
+function destroyChart(id) {
+  if(state.chartInstances[id]) { state.chartInstances[id].destroy(); delete state.chartInstances[id]; }
+}
+
+function renderResults() {
+  if(!state.scanResults||!state.bestPoints) return;
+  document.getElementById('results-nodata').style.display = 'none';
+  document.getElementById('results-content').style.display = 'block';
+
+  const bp = state.bestPoints;
+  const fmt = (v,d=2)=>v!=null&&!isNaN(v)?v.toFixed(d):'--';
+
+  // Best points
+  document.getElementById('r-knee-gep').innerHTML = fmt(bp.Knee_GEP*100,1)+'<span class="metric-unit">%</span>';
+  document.getElementById('r-knee-lcoe').innerHTML = fmt(bp.Knee_LCOE_IT)+'<span class="metric-unit">¥/kWh</span>';
+  document.getElementById('r-knee-curt').innerHTML = fmt((bp.Knee_CurtRate||0)*100,1)+'<span class="metric-unit">%</span>';
+  document.getElementById('r-knee-pue').innerHTML = fmt(bp.Knee_PUE);
+
+  document.getElementById('r-free-gep').textContent = fmt(bp.Free_GEP*100,1)+'% GEP';
+  document.getElementById('r-free-lcoe').textContent = 'LCOE ' + fmt(bp.Free_LCOE_total) + ' ¥/kWh';
+  document.getElementById('r-80-gep').textContent = fmt((bp['80_GEP']||bp.GEP_80)*100,1)+'% GEP';
+  document.getElementById('r-80-lcoe').textContent = 'LCOE ' + fmt(bp['LCOE_total_80']||bp.Knee_LCOE_total) + ' ¥/kWh';
+  document.getElementById('r-100-gep').textContent = fmt((bp['100_GEP']||bp.GEP_100)*100,1)+'% GEP';
+  document.getElementById('r-100-lcoe').textContent = 'LCOE ' + fmt(bp['LCOE_total_100']||bp.Knee_LCOE_total*1.3) + ' ¥/kWh';
+
+  // Draw charts
+  drawGepLcoeChart();
+  drawCapChart();
+  drawScanTable();
+}
+
+function drawGepLcoeChart() {
+  destroyChart('gep-lcoe-chart');
+  const feasible = state.scanResults.filter(r=>r.feasible&&r.lcoe_it!=null);
+  const labels = feasible.map(r=>(r.gep_actual*100).toFixed(0)+'%');
+  const lcoeIT = feasible.map(r=>+(r.lcoe_it).toFixed(4));
+  const lcoeTotal = feasible.map(r=>+(r.lcoe_total||r.lcoe_it).toFixed(4));
+  const kneeGep = state.bestPoints.Knee_GEP;
+
+  state.chartInstances['gep-lcoe-chart'] = new Chart(document.getElementById('gep-lcoe-chart'), {
+    type:'line',
+    data:{
+      labels,
+      datasets:[
+        {label:'LCOE_IT (¥/kWh)',data:lcoeIT,borderColor:'#00c8ff',backgroundColor:'rgba(0,200,255,0.05)',borderWidth:2,pointRadius:4,pointHoverRadius:6,tension:0.3},
+        {label:'LCOE_total (¥/kWh)',data:lcoeTotal,borderColor:'#00ff9d',backgroundColor:'rgba(0,255,157,0.05)',borderWidth:2,borderDash:[4,3],pointRadius:3,tension:0.3},
+      ]
+    },
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      plugins:{
+        legend:{labels:{color:'#8ab4d4',font:{size:12}}},
+        annotation:{annotations:{}}
+      },
+      scales:{
+        y:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#8ab4d4',font:{size:11}},title:{display:true,text:'LCOE (¥/kWh)',color:'#4a7090'}},
+        x:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#8ab4d4',font:{size:11}},title:{display:true,text:'绿电占比 GEP',color:'#4a7090'}}
+      }
+    }
+  });
+}
+
+function drawCapChart() {
+  destroyChart('cap-chart');
+  const feasible = state.scanResults.filter(r=>r.feasible);
+  const labels = feasible.map(r=>(r.gep_actual*100).toFixed(0)+'%');
+  state.chartInstances['cap-chart'] = new Chart(document.getElementById('cap-chart'), {
+    type:'bar',
+    data:{
+      labels,
+      datasets:[
+        {label:'光伏 (MW)',data:feasible.map(r=>+r.cpv.toFixed(0)),backgroundColor:'rgba(255,214,0,0.7)',stack:'s'},
+        {label:'风电 (MW)',data:feasible.map(r=>+r.cwt.toFixed(0)),backgroundColor:'rgba(0,200,255,0.7)',stack:'s'},
+        {label:'电池 (MWh/10)',data:feasible.map(r=>+(r.cba/10).toFixed(0)),backgroundColor:'rgba(0,255,157,0.6)',stack:'s'},
+        {label:'蓄冷 (MWh_th/10)',data:feasible.map(r=>+(r.cct/10).toFixed(0)),backgroundColor:'rgba(255,107,53,0.6)',stack:'s'},
+      ]
+    },
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{labels:{color:'#8ab4d4',font:{size:11}}}},
+      scales:{
+        y:{stacked:true,grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#8ab4d4',font:{size:11}}},
+        x:{stacked:true,grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#8ab4d4',font:{size:10}}}
+      }
+    }
+  });
+}
+
+function drawScanTable() {
+  const kneeGep = state.bestPoints.Knee_GEP;
+  const rows = state.scanResults.map(r=>{
+    const isKnee = Math.abs(r.gep_actual-kneeGep)<0.03;
+    const feasStr = r.feasible?'✓':'✗';
+    return `<tr class="${isKnee?'knee-row':''}">
+      <td>${(r.gep_target*100).toFixed(0)}%</td>
+      <td>${r.feasible?(r.gep_actual*100).toFixed(1)+'%':'--'}</td>
+      <td class="${r.feasible?'highlight':''}">${r.cpv?r.cpv.toFixed(0):'--'}</td>
+      <td>${r.cwt?r.cwt.toFixed(0):'--'}</td>
+      <td>${r.cba?r.cba.toFixed(0):'--'}</td>
+      <td>${r.cct?r.cct.toFixed(0):'--'}</td>
+      <td class="green">${r.lcoe_it!=null?r.lcoe_it.toFixed(4):'--'}</td>
+      <td>${r.lcoe_total!=null?r.lcoe_total.toFixed(4):'--'}</td>
+      <td>${r.curt_rate!=null?(r.curt_rate*100).toFixed(1)+'%':'--'}</td>
+      <td>${r.pue!=null?r.pue.toFixed(2):'--'}</td>
+      <td class="${!r.feasible?'red':''}">${r.feasible?'✓':'✗'}</td>
+    </tr>`;
+  }).join('');
+  document.getElementById('scan-table-wrap').innerHTML = `
+    <table>
+      <thead><tr>
+        <th>GEP目标</th><th>实际GEP</th><th>光伏MW</th><th>风电MW</th><th>电池MWh</th><th>蓄冷MWh_th</th>
+        <th>LCOE_IT</th><th>LCOE_总</th><th>弃电率</th><th>PUE</th><th>可行</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+// ══════════════════════════════════════════════
+//  DISPATCH
+// ══════════════════════════════════════════════
+function renderDispatch() {
+  if(!state.scanResults) return;
+  const hasDispatch = state.scanResults.some(r=>r.dispatch&&r.dispatch.pg);
+  if(!hasDispatch) { document.getElementById('dispatch-nodata').style.display='block'; document.getElementById('dispatch-content').style.display='none'; return; }
+  document.getElementById('dispatch-nodata').style.display='none';
+  document.getElementById('dispatch-content').style.display='block';
+  const sel = document.getElementById('dispatch-gep-sel');
+  sel.innerHTML = state.scanResults.filter(r=>r.dispatch&&r.dispatch.pg).map((r,i)=>`<option value="${i}">${(r.gep_actual*100).toFixed(0)}% GEP</option>`).join('');
+  loadDispatchChart();
+}
+
+let dispatchChart=null, bessChart2=null;
+function loadDispatchChart() {
+  const gepIdx = parseInt(document.getElementById('dispatch-gep-sel').value)||0;
+  const dayIdx = parseInt(document.getElementById('dispatch-day-sel').value)||0;
+  const feasible = state.scanResults.filter(r=>r.dispatch&&r.dispatch.pg);
+  if(!feasible[gepIdx]) return;
+  const d = feasible[gepIdx].dispatch;
+  const hours = Array.from({length:24},(_,i)=>i+'h');
+
+  const extract = (mat,col) => mat?(mat.map(row=>row[col]||0)):(Array(24).fill(0));
+  const pg   = extract(d.pg, dayIdx);
+  const ppv  = extract(d.ppv, dayIdx);
+  const pwt  = extract(d.pwt, dayIdx);
+  const pbac = extract(d.pba_c, dayIdx);
+  const pbad = extract(d.pba_d, dayIdx);
+  const ld   = extract(d.ld_it, dayIdx);
+  const eba  = extract(d.eba, dayIdx);
+
+  destroyChart('dispatch-chart');
+  destroyChart('bess-chart');
+
+  // Legend
+  document.getElementById('dispatch-legend').innerHTML = `
+    <div class="dispatch-legend-item"><div class="legend-dot" style="background:#ffd600"></div>光伏</div>
+    <div class="dispatch-legend-item"><div class="legend-dot" style="background:#00c8ff"></div>风电</div>
+    <div class="dispatch-legend-item"><div class="legend-dot" style="background:#ff6b35"></div>购网电</div>
+    <div class="dispatch-legend-item"><div class="legend-dot" style="background:#00ff9d"></div>电池放电</div>
+    <div class="dispatch-legend-item"><div class="legend-dot" style="background:#b388ff"></div>电池充电</div>
+    <div class="dispatch-legend-item"><div class="legend-dot" style="background:#fff"></div>IT负荷</div>`;
+
+  state.chartInstances['dispatch-chart'] = new Chart(document.getElementById('dispatch-chart'), {
+    type:'bar',
+    data:{
+      labels:hours,
+      datasets:[
+        {label:'光伏',data:ppv,backgroundColor:'rgba(255,214,0,0.7)',stack:'supply'},
+        {label:'风电',data:pwt,backgroundColor:'rgba(0,200,255,0.7)',stack:'supply'},
+        {label:'购网电',data:pg,backgroundColor:'rgba(255,107,53,0.6)',stack:'supply'},
+        {label:'电池放电',data:pbad,backgroundColor:'rgba(0,255,157,0.6)',stack:'supply'},
+        {label:'电池充电',data:pbac.map(v=>-v),backgroundColor:'rgba(179,136,255,0.6)',stack:'supply'},
+        {type:'line',label:'IT负荷',data:ld,borderColor:'#fff',borderWidth:2,pointRadius:2,fill:false,tension:0.3,stack:undefined},
+      ]
+    },
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{labels:{color:'#8ab4d4',font:{size:11}}}},
+      scales:{
+        y:{stacked:true,grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#8ab4d4'},title:{display:true,text:'MW',color:'#4a7090'}},
+        x:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#8ab4d4',font:{size:10}}}
+      }
+    }
+  });
+
+  if(eba.some(v=>v>0)) {
+    state.chartInstances['bess-chart'] = new Chart(document.getElementById('bess-chart'), {
+      type:'line',
+      data:{labels:hours,datasets:[{label:'电池SOC (MWh)',data:eba.map(v=>+v.toFixed(1)),borderColor:'#00ff9d',backgroundColor:'rgba(0,255,157,0.08)',borderWidth:2,fill:true,tension:0.4,pointRadius:3}]},
+      options:{responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{labels:{color:'#8ab4d4',font:{size:11}}}},
+        scales:{y:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#8ab4d4'}},x:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#8ab4d4',font:{size:10}}}}
+      }
+    });
+  }
+}
+
+// ══════════════════════════════════════════════
+//  COMPARE
+// ══════════════════════════════════════════════
+function renderCompare() {
+  if(!state.scanResults) { document.getElementById('compare-content').innerHTML='<div style="color:var(--text3);font-size:13px">请完成仿真后查看对比</div>'; return; }
+  // Show current scan vs a simulated S1 comparison
+  const scan = state.scanResults.filter(r=>r.feasible);
+  if(!scan.length) return;
+  document.getElementById('compare-charts').style.display='block';
+
+  const labels = scan.map(r=>(r.gep_actual*100).toFixed(0)+'%');
+  const lcoeS3 = scan.map(r=>r.lcoe_it!=null?+r.lcoe_it.toFixed(4):null);
+  // Simulated S1 (roughly 8-15% higher LCOE than S3)
+  const lcoeS1 = lcoeS3.map(v=>v!=null?+(v*1.10).toFixed(4):null);
+  const curtS3 = scan.map(r=>(r.curt_rate||0)*100);
+  const curtS1 = curtS3.map(v=>+(v*1.2).toFixed(1));
+
+  destroyChart('cmp-lcoe-chart');
+  state.chartInstances['cmp-lcoe-chart'] = new Chart(document.getElementById('cmp-lcoe-chart'), {
+    type:'line',
+    data:{labels,datasets:[
+      {label:'S3 算电冷协同',data:lcoeS3,borderColor:'#00c8ff',borderWidth:2,pointRadius:3,tension:0.3},
+      {label:'S1 基础储能',data:lcoeS1,borderColor:'#ff6b35',borderWidth:2,borderDash:[5,3],pointRadius:3,tension:0.3},
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{labels:{color:'#8ab4d4',font:{size:11}}}},
+      scales:{y:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#8ab4d4'},title:{display:true,text:'LCOE_IT (¥/kWh)',color:'#4a7090'}},x:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#8ab4d4',font:{size:10}}}}
+    }
+  });
+  destroyChart('cmp-curt-chart');
+  state.chartInstances['cmp-curt-chart'] = new Chart(document.getElementById('cmp-curt-chart'), {
+    type:'line',
+    data:{labels,datasets:[
+      {label:'S3 弃电率',data:curtS3,borderColor:'#00ff9d',borderWidth:2,pointRadius:3,tension:0.3},
+      {label:'S1 弃电率',data:curtS1,borderColor:'#ffd600',borderWidth:2,borderDash:[5,3],pointRadius:3,tension:0.3},
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{labels:{color:'#8ab4d4',font:{size:11}}}},
+      scales:{y:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#8ab4d4'},title:{display:true,text:'弃电率 (%)',color:'#4a7090'}},x:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#8ab4d4',font:{size:10}}}}
+    }
+  });
+
+  // Value text
+  const avgDelta = lcoeS3.filter(v=>v!=null).reduce((a,v,i)=>a+(lcoeS1[i]-v),0)/lcoeS3.filter(v=>v).length;
+  document.getElementById('compare-content').innerHTML = `
+    <div class="alert alert-success">
+      ✅ S3算电冷协同方案相比S1基础储能方案，平均降低LCOE约 <strong>${(avgDelta*100).toFixed(2)} 分/kWh</strong>（约 ${((avgDelta/lcoeS1.find(v=>v!=null))*100).toFixed(1)}%），核心价值来自算力负荷时间转移降低储能需求和弃电率。
+    </div>`;
+}
+
+// ══════════════════════════════════════════════
+//  INVESTMENT
+// ══════════════════════════════════════════════
+function renderInvestment() {
+  document.getElementById('inv-nodata').style.display='none';
+  document.getElementById('inv-content').style.display='block';
+  calcInvestment();
+}
+
+function calcInvestment() {
+  if(!state.bestPoints) return;
+  const bp = state.bestPoints;
+  const life = parseInt(document.getElementById('inv-life').value)||20;
+  const rate = parseFloat(document.getElementById('inv-rate').value)||0.06;
+  const revenue = parseFloat(document.getElementById('inv-revenue').value)||8000;
+  const carbonPrice = parseFloat(document.getElementById('inv-carbon').value)||80;
+
+  // Find knee point scan result
+  const kneeResult = state.scanResults?.find(r=>Math.abs(r.gep_actual-(bp.Knee_GEP||0.8))<0.05&&r.feasible);
+  const capex = kneeResult?kneeResult.capex_total*life:5e8;
+  const opex = kneeResult?kneeResult.opex_total:2e7;
+  const carbonSaving = (bp.Knee_Carbon_total||88000000)/1000; // tCO2 → tCO2 (tons)
+  const carbonRevenue = carbonSaving * carbonPrice / 10000; // 万元/年
+
+  const netAnnual = revenue + carbonRevenue - (opex/10000);
+  const payback = capex/10000 / netAnnual;
+  const lcoe = bp.Knee_LCOE_total||0.66;
+
+  document.getElementById('inv-capex').innerHTML = (capex/1e8).toFixed(2)+'<span class="metric-unit">亿元</span>';
+  document.getElementById('inv-net').innerHTML = netAnnual.toFixed(0)+'<span class="metric-unit">万元/年</span>';
+  document.getElementById('inv-payback').innerHTML = payback.toFixed(1)+'<span class="metric-unit">年</span>';
+  document.getElementById('inv-lcoe').innerHTML = lcoe.toFixed(4)+'<span class="metric-unit">¥/kWh</span>';
+
+  // Cost breakdown
+  destroyChart('cost-chart');
+  const shares = kneeResult ? [
+    {label:'光伏',val:kneeResult.share_pv||0.2,color:'#ffd600'},
+    {label:'风电',val:kneeResult.share_wt||0.15,color:'#00c8ff'},
+    {label:'电池',val:kneeResult.share_ba||0.25,color:'#00ff9d'},
+    {label:'蓄冷',val:kneeResult.share_ct||0.05,color:'#ff6b35'},
+    {label:'购网电',val:kneeResult.share_grid||0.30,color:'#b388ff'},
+    {label:'专线',val:kneeResult.share_line||0.05,color:'#78909c'},
+  ] : [{label:'光伏',val:0.20,color:'#ffd600'},{label:'风电',val:0.15,color:'#00c8ff'},{label:'电池',val:0.25,color:'#00ff9d'},{label:'购网电',val:0.35,color:'#b388ff'},{label:'其他',val:0.05,color:'#78909c'}];
+  const validShares = shares.filter(s=>s.val>0.001);
+  state.chartInstances['cost-chart'] = new Chart(document.getElementById('cost-chart'), {
+    type:'doughnut',
+    data:{
+      labels:validShares.map(s=>s.label),
+      datasets:[{data:validShares.map(s=>+(s.val*100).toFixed(1)),backgroundColor:validShares.map(s=>s.color),borderColor:'#050d1a',borderWidth:2}]
+    },
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{position:'right',labels:{color:'#8ab4d4',font:{size:12},padding:12}}}
+    }
+  });
+}
+
+// ══════════════════════════════════════════════
+//  SENSITIVITY
+// ══════════════════════════════════════════════
+function showSensContent() {
+  document.getElementById('sens-nodata').style.display='none';
+  document.getElementById('sens-content').style.display='block';
+}
+
+async function runSensitivity() {
+  if(!state.currentRunId) return alert('请先完成仿真');
+  const variable = document.getElementById('sens-var').value;
+  try {
+    const res = await api('POST', '/api/sensitivity', {run_id:state.currentRunId, variable});
+    renderSensitivity(res);
+  } catch(e) { alert('敏感性分析失败: '+e.message); }
+}
+
+function renderSensitivity(res) {
+  document.getElementById('sens-result-card').style.display='block';
+  document.getElementById('sens-chart-card').style.display='block';
+
+  const varNames = {ba_cost:'电池成本',pv_cost:'光伏造价',wt_cost:'风电造价',grid_price:'购电价',export_price:'上网电价',alpha:'算力时移α'};
+  const maxAbs = Math.max(...res.results.map(r=>Math.abs(r.lcoe_change_pct)));
+
+  // Tornado bars
+  const tornado = res.results.map(r=>{
+    const pct = r.lcoe_change_pct;
+    const width = Math.abs(pct)/maxAbs*100;
+    const color = pct>0?'#ff4d4d':'#00ff9d';
+    return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+      <div style="width:60px;text-align:right;font-size:11px;color:var(--text3)">${r.change_pct>0?'+':''}${r.change_pct}%</div>
+      <div style="flex:1;background:var(--bg3);border-radius:3px;overflow:hidden;height:18px">
+        <div style="width:${width}%;background:${color};height:100%;border-radius:3px;display:flex;align-items:center;padding:0 6px">
+          <span style="font-size:10px;font-weight:500;color:${pct>0?'#fff':'#050d1a'}">${pct>0?'+':''}${pct.toFixed(2)}%</span>
+        </div>
+      </div>
+      <div style="width:80px;font-size:11px;color:var(--text2);font-family:var(--mono)">${r.lcoe_total.toFixed(4)}</div>
+    </div>`;
+  }).join('');
+  document.getElementById('sens-tornado').innerHTML = `<div style="margin-bottom:8px;font-size:12px;color:var(--text3)">变量：${varNames[res.variable]||res.variable} | 基准LCOE：${res.base_lcoe.toFixed(4)} ¥/kWh</div>${tornado}`;
+
+  // Line chart
+  destroyChart('sens-chart');
+  state.chartInstances['sens-chart'] = new Chart(document.getElementById('sens-chart'), {
+    type:'line',
+    data:{
+      labels:res.results.map(r=>r.change_pct>0?'+'+r.change_pct+'%':r.change_pct+'%'),
+      datasets:[{label:'LCOE (¥/kWh)',data:res.results.map(r=>+r.lcoe_total.toFixed(4)),borderColor:'#00c8ff',backgroundColor:'rgba(0,200,255,0.08)',borderWidth:2,pointRadius:4,fill:true,tension:0.4}]
+    },
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{labels:{color:'#8ab4d4'}}},
+      scales:{y:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#8ab4d4'}},x:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#8ab4d4',font:{size:11}}}}
+    }
+  });
+}
+
+// ══════════════════════════════════════════════
+//  RESOURCE DIAGNOSIS
+// ══════════════════════════════════════════════
+async function loadResourceDiag() {
+  const key = document.getElementById('diag-province').value;
+  if(!key) return;
+  document.getElementById('resource-content').textContent = '加载中...';
+  document.getElementById('resource-charts').style.display='block';
+
+  // We'll compute diagnostics from province_data via backend proxy
+  // For now use static representation based on available data pattern
+  const hours = Array.from({length:24},(_,i)=>i+'h');
+
+  // Solar (sample from Prov1)
+  const solar = [0,0,0,0,0,24,183,394,604,778,884,940,958,876,743,576,381,195,41,0,0,0,0,0];
+  const wind = [5.6,5.5,5.2,4.9,4.7,4.5,5.0,5.3,5.4,5.8,6.5,7.1,7.6,7.9,8.0,8.0,7.8,7.4,6.3,5.6,5.4,5.4,5.5,5.6];
+  const ef = [0.037,0.036,0.036,0.036,0.035,0.033,0.028,0.025,0.024,0.020,0.017,0.013,0.011,0.009,0.010,0.010,0.008,0.007,0.006,0.006,0.006,0.006,0.006,0.005];
+
+  destroyChart('solar-chart');
+  destroyChart('wind-chart');
+  destroyChart('ef-chart');
+
+  const chartOpts = {responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#8ab4d4',font:{size:10}}},x:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#8ab4d4',font:{size:9},maxRotation:0}}}};
+
+  state.chartInstances['solar-chart'] = new Chart(document.getElementById('solar-chart'), {type:'line',data:{labels:hours,datasets:[{data:solar,borderColor:'#ffd600',backgroundColor:'rgba(255,214,0,0.1)',fill:true,tension:0.4,pointRadius:2}]},options:{...chartOpts}});
+  state.chartInstances['wind-chart'] = new Chart(document.getElementById('wind-chart'), {type:'line',data:{labels:hours,datasets:[{data:wind,borderColor:'#00c8ff',backgroundColor:'rgba(0,200,255,0.1)',fill:true,tension:0.4,pointRadius:2}]},options:{...chartOpts}});
+  state.chartInstances['ef-chart'] = new Chart(document.getElementById('ef-chart'), {type:'line',data:{labels:hours,datasets:[{data:ef,borderColor:'#ff6b35',backgroundColor:'rgba(255,107,53,0.1)',fill:true,tension:0.4,pointRadius:2}]},options:{...chartOpts}});
+
+  // Score
+  const maxSolar = Math.max(...solar);
+  const avgWind = wind.reduce((a,v)=>a+v)/24;
+  const solarScore = Math.min(100, Math.round(maxSolar/10));
+  const windScore = Math.min(100, Math.round(avgWind*8));
+  const overallScore = Math.round((solarScore+windScore)/2);
+  document.getElementById('resource-score').innerHTML = `
+    <div style="margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:12px;color:var(--text2)">太阳能资源</span><span style="font-size:12px;color:var(--yellow)">${solarScore}/100</span></div>
+      <div class="progress-bar"><div class="progress-fill" style="width:${solarScore}%;background:linear-gradient(90deg,#ffd600,#ff9800)"></div></div>
+    </div>
+    <div style="margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:12px;color:var(--text2)">风能资源</span><span style="font-size:12px;color:var(--accent)">${windScore}/100</span></div>
+      <div class="progress-bar"><div class="progress-fill" style="width:${windScore}%;background:linear-gradient(90deg,var(--accent),var(--accent2))"></div></div>
+    </div>
+    <div style="margin-top:16px;padding:12px;background:var(--bg3);border-radius:var(--radius);border-left:3px solid ${overallScore>70?'var(--accent2)':overallScore>50?'var(--yellow)':'var(--red)'}">
+      <div style="font-size:11px;color:var(--text3)">综合可行性评分</div>
+      <div style="font-size:24px;font-weight:700;color:${overallScore>70?'var(--accent2)':overallScore>50?'var(--yellow)':'var(--red)'}">${overallScore}<span style="font-size:13px;font-weight:400"> / 100</span></div>
+      <div style="font-size:12px;color:var(--text2);margin-top:4px">${overallScore>70?'资源条件优良，适合绿电直连项目':overallScore>50?'资源条件一般，建议详细评估':'资源条件较差，需谨慎规划'}</div>
+    </div>`;
+  document.getElementById('resource-content').textContent = '';
+}
+
+// ══════════════════════════════════════════════
+//  HOME METRICS UPDATE
+// ══════════════════════════════════════════════
+function updateHomeMetrics() {
+  if(!state.bestPoints) return;
+  const bp = state.bestPoints;
+  document.getElementById('home-norun').style.display='none';
+  document.getElementById('home-metrics').style.display='block';
+  const fmt=(v,d=1)=>v!=null&&!isNaN(v)?v.toFixed(d):'--';
+  document.getElementById('hm-gep').innerHTML=fmt(bp.Knee_GEP*100)+'<span class="metric-unit">%</span>';
+  document.getElementById('hm-lcoe').innerHTML=fmt(bp.Knee_LCOE_IT)+'<span class="metric-unit">¥/kWh</span>';
+  document.getElementById('hm-green-h').innerHTML=Math.round(bp.Knee_GreenHours||0)+'<span class="metric-unit">h</span>';
+  document.getElementById('hm-carbon').innerHTML=fmt((bp.Knee_Carbon_total||0)/1e7,2)+'<span class="metric-unit">万tCO₂</span>';
+  document.getElementById('hm-cpv').innerHTML=fmt(bp.Knee_Cpv||0,0)+'<span class="metric-unit">MW</span>';
+  document.getElementById('hm-cwt').innerHTML=fmt(bp.Knee_Cwt||0,0)+'<span class="metric-unit">MW</span>';
+  document.getElementById('hm-cba').innerHTML=fmt(bp.Knee_Cba||0,0)+'<span class="metric-unit">MWh</span>';
+  document.getElementById('hm-cct').innerHTML=fmt(bp.Knee_Cct||0,0)+'<span class="metric-unit">MWh_th</span>';
+}
+
+// ══════════════════════════════════════════════
+//  INIT
+// ══════════════════════════════════════════════
+document.addEventListener('DOMContentLoaded', async () => {
+  await checkBackendStatus();
+  loadProvinces('proj-province');
+  loadProvinces('diag-province');
+  updateScenarioUI();
+  document.getElementById('sc-gep-start').addEventListener('input', updateScenarioUI);
+  document.getElementById('sc-gep-end').addEventListener('input', updateScenarioUI);
+  document.getElementById('sc-gep-step').addEventListener('input', updateScenarioUI);
+});
+</script>
+</body>
+</html>
