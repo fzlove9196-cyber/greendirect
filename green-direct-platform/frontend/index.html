@@ -8,6 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/echarts/5.5.1/echarts.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
 :root {
   --bg: #050d1a;
@@ -249,6 +250,12 @@ td.red { color: var(--red); }
 /* CHART CONTAINER */
 .chart-container { position: relative; width: 100%; }
 .echart { width: 100%; height: 100%; min-height: inherit; }
+.input-toolbar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:12px; }
+.edit-table-wrap { max-height: 340px; overflow:auto; border:1px solid var(--border); border-radius:var(--radius); background:var(--bg3); }
+.edit-table { min-width: 100%; border-collapse: collapse; }
+.edit-table th { position: sticky; top: 0; background: var(--panel2); z-index: 1; }
+.edit-table input { width: 86px; background:rgba(5,13,26,0.7); border:1px solid rgba(0,200,255,0.12); color:var(--text); border-radius:4px; padding:5px 6px; font-family:var(--mono); font-size:11px; }
+.edit-table input:focus { outline:none; border-color:var(--accent); }
 
 /* PROGRESS BAR */
 .progress-bar { height: 6px; background: var(--bg3); border-radius: 3px; overflow: hidden; }
@@ -548,13 +555,47 @@ td.red { color: var(--red); }
               <div class="help-text">原始 MATLAB 天气工作簿包含干球温度、湿球温度、太阳辐照度、风速、典型日权重和电网碳因子；这里可一次性覆盖全部字段。</div>
             </div>
             <div class="form-group">
-              <label class="form-label">自定义 tariff_info JSON（可选）</label>
-              <textarea class="form-input form-textarea" id="proj-tariff-json" placeholder='留空使用省份内置电价；可填 {"grid_price":[...24小时...],"capacity_fee":35,"export_price":0.30,"currency":"CNY","tariff_name":"方案名"}'></textarea>
+              <label class="form-label">表格化输入 / Excel导入（推荐）</label>
+              <div class="input-toolbar">
+                <select class="form-select" id="proj-data-kind" style="width:230px" onchange="switchProjectDataKind()">
+                  <option value="temp_dry">干球温度 temp_dry (24×N)</option>
+                  <option value="temp_wet">湿球温度 temp_wet (24×N)</option>
+                  <option value="solar_irradiance">太阳辐照度 solar_irradiance (24×N)</option>
+                  <option value="wind_speed">风速 wind_speed (24×N)</option>
+                  <option value="grid_carbon_factor">电网碳因子 grid_carbon_factor (24×N)</option>
+                  <option value="typical_day_weight">典型日权重 typical_day_weight (N)</option>
+                  <option value="grid_price">分时购电价 grid_price (24)</option>
+                  <option value="it_load">IT负荷 it_load (24)</option>
+                </select>
+                <button class="btn btn-outline" type="button" onclick="renderProjectDataEditor(true)">生成/刷新表格</button>
+                <input class="form-input" id="proj-excel-file" type="file" accept=".xlsx,.xls,.csv" style="max-width:250px" onchange="importProjectExcel(event)">
+                <button class="btn btn-outline" type="button" onclick="saveProjectEditorData()">保存当前表格</button>
+              </div>
+              <div class="help-text">Excel 可按 sheet 名导入：temp_dry、temp_wet、solar_irradiance、wind_speed、grid_carbon_factor、typical_day_weight、grid_price、it_load；若未匹配 sheet，则导入到当前选择的数据项。</div>
+              <div id="project-data-editor" class="edit-table-wrap"></div>
             </div>
-            <div class="form-group">
-              <label class="form-label">自定义 load_info JSON（可选）</label>
+            <div class="grid3">
+              <div class="form-group">
+                <label class="form-label">容量电费 (元/kW/月，可选)</label>
+                <input class="form-input" id="proj-capacity-fee" type="number" step="0.01" placeholder="留空使用省份内置">
+              </div>
+              <div class="form-group">
+                <label class="form-label">上网电价 (元/kWh，可选)</label>
+                <input class="form-input" id="proj-export-price" type="number" step="0.001" placeholder="留空使用省份内置">
+              </div>
+              <div class="form-group">
+                <label class="form-label">电价方案名称</label>
+                <input class="form-input" id="proj-tariff-name" placeholder="如 一般工商业分时电价">
+              </div>
+            </div>
+            <details class="form-group">
+              <summary class="form-label" style="cursor:pointer">高级：tariff_info JSON（可选）</summary>
+              <textarea class="form-input form-textarea" id="proj-tariff-json" placeholder='留空使用表格和上方输入；可填 {"grid_price":[...24小时...],"capacity_fee":35,"export_price":0.30,"currency":"CNY","tariff_name":"方案名"}'></textarea>
+            </details>
+            <details class="form-group">
+              <summary class="form-label" style="cursor:pointer">高级：load_info JSON（可选）</summary>
               <textarea class="form-input form-textarea" id="proj-load-json" placeholder='可填 {"it_load":[...24小时MW...],"load_profile":"raw","it_load_cap_s3":500,"chiller_cap_multiplier":1.5,"qch_cap_max_s3":750,"alpha":0.4,"flex_windows":[2,5,8,12]}'></textarea>
-            </div>
+            </details>
             <button class="btn btn-primary" onclick="createProject()" style="width:100%">创建项目</button>
           </div>
 
@@ -1112,6 +1153,8 @@ let state = {
   bestPoints: null,
   pollTimer: null,
   chartInstances: {},
+  projectInputOverrides: { weather_info:{}, tariff_info:{}, load_info:{} },
+  activeProjectDataKind: 'temp_dry',
 };
 
 // ══════════════════════════════════════════════
@@ -1203,6 +1246,133 @@ function validateWeatherInfoShape(weatherInfo) {
   });
 }
 
+const projectDatasetMeta = {
+  temp_dry: {target:'weather_info', rows:24, cols:() => parseInt(document.getElementById('proj-typical-days')?.value)||6, label:'干球温度', unit:'°C'},
+  temp_wet: {target:'weather_info', rows:24, cols:() => parseInt(document.getElementById('proj-typical-days')?.value)||6, label:'湿球温度', unit:'°C'},
+  solar_irradiance: {target:'weather_info', rows:24, cols:() => parseInt(document.getElementById('proj-typical-days')?.value)||6, label:'太阳辐照度', unit:'W/m²'},
+  wind_speed: {target:'weather_info', rows:24, cols:() => parseInt(document.getElementById('proj-typical-days')?.value)||6, label:'风速', unit:'m/s'},
+  grid_carbon_factor: {target:'weather_info', rows:24, cols:() => parseInt(document.getElementById('proj-typical-days')?.value)||6, label:'电网碳因子', unit:'kgCO₂/kWh'},
+  typical_day_weight: {target:'weather_info', rows:1, cols:() => parseInt(document.getElementById('proj-typical-days')?.value)||6, vector:true, label:'典型日权重', unit:'天/年'},
+  grid_price: {target:'tariff_info', rows:24, cols:() => 1, vector:true, label:'分时购电价', unit:'元/kWh'},
+  it_load: {target:'load_info', rows:24, cols:() => 1, vector:true, label:'IT负荷', unit:'MW'},
+};
+
+function defaultDatasetValue(kind) {
+  const meta = projectDatasetMeta[kind];
+  const cols = meta.cols();
+  if(meta.vector) return Array.from({length: meta.rows === 1 ? cols : meta.rows}, () => 0);
+  return Array.from({length:meta.rows}, () => Array(cols).fill(0));
+}
+
+function getProjectDataset(kind) {
+  const meta = projectDatasetMeta[kind];
+  return state.projectInputOverrides[meta.target][kind] || defaultDatasetValue(kind);
+}
+
+function setProjectDataset(kind, value) {
+  const meta = projectDatasetMeta[kind];
+  state.projectInputOverrides[meta.target][kind] = value;
+}
+
+function switchProjectDataKind() {
+  saveProjectEditorData(false);
+  state.activeProjectDataKind = document.getElementById('proj-data-kind').value;
+  renderProjectDataEditor(false);
+}
+
+function renderProjectDataEditor(reset=false) {
+  const kind = document.getElementById('proj-data-kind')?.value || state.activeProjectDataKind;
+  state.activeProjectDataKind = kind;
+  const meta = projectDatasetMeta[kind];
+  const value = getProjectDataset(kind);
+  const container = document.getElementById('project-data-editor');
+  if(!container) return;
+  const cols = meta.vector ? (meta.rows === 1 ? meta.cols() : 1) : meta.cols();
+  const header = ['<th>时段</th>'];
+  for(let c=0;c<cols;c++) header.push(`<th>${meta.rows===1?'典型日':'D'}${c+1}</th>`);
+  const bodyRows = [];
+  const rows = meta.rows === 1 ? 1 : meta.rows;
+  for(let r=0;r<rows;r++) {
+    const cells = [`<td>${meta.rows===1?meta.label:(r+1)+'h'}</td>`];
+    for(let c=0;c<cols;c++) {
+      const v = meta.vector ? (meta.rows===1 ? value[c] : value[r]) : value?.[r]?.[c];
+      cells.push(`<td><input type="number" step="any" data-r="${r}" data-c="${c}" value="${v ?? 0}" onchange="document.getElementById('project-data-editor').dataset.dirty='1'"></td>`);
+    }
+    bodyRows.push(`<tr>${cells.join('')}</tr>`);
+  }
+  container.dataset.dirty = '0';
+  container.innerHTML = `<div style="padding:10px;color:var(--text2);font-size:12px">当前编辑：${meta.label} (${meta.unit})</div><table class="edit-table"><thead><tr>${header.join('')}</tr></thead><tbody>${bodyRows.join('')}</tbody></table>`;
+}
+
+function saveProjectEditorData(showMessage=true) {
+  const container = document.getElementById('project-data-editor');
+  if(!container || !container.querySelector('input')) return;
+  if(container.dataset.dirty !== '1') return;
+  const kind = state.activeProjectDataKind;
+  const meta = projectDatasetMeta[kind];
+  const inputs = [...container.querySelectorAll('input')];
+  let value;
+  if(meta.vector) {
+    const len = meta.rows === 1 ? meta.cols() : meta.rows;
+    value = Array(len).fill(0);
+    inputs.forEach(inp => { value[meta.rows===1 ? Number(inp.dataset.c) : Number(inp.dataset.r)] = Number(inp.value)||0; });
+  } else {
+    value = Array.from({length:meta.rows}, () => Array(meta.cols()).fill(0));
+    inputs.forEach(inp => { value[Number(inp.dataset.r)][Number(inp.dataset.c)] = Number(inp.value)||0; });
+  }
+  setProjectDataset(kind, value);
+  container.dataset.dirty = '0';
+  if(showMessage) alert(`${meta.label} 表格数据已保存`);
+}
+
+function sheetToNumericGrid(sheet) {
+  return XLSX.utils.sheet_to_json(sheet, {header:1, raw:true, defval:null})
+    .map(row => row.map(v => typeof v === 'number' ? v : Number(v)).filter(v => Number.isFinite(v)))
+    .filter(row => row.length);
+}
+
+function normalizeImportedDataset(kind, grid) {
+  const meta = projectDatasetMeta[kind];
+  if(meta.vector) {
+    const len = meta.rows === 1 ? meta.cols() : meta.rows;
+    const flat = grid.flat().filter(v => Number.isFinite(v));
+    if(flat.length < len) throw new Error(`${meta.label} 至少需要 ${len} 个数值`);
+    return flat.slice(0, len);
+  }
+  const rows = grid.slice(0, meta.rows).map(row => row.slice(0, meta.cols()));
+  if(rows.length < meta.rows || rows.some(row => row.length < meta.cols())) throw new Error(`${meta.label} 需要 ${meta.rows}×${meta.cols()} 个数值`);
+  return rows;
+}
+
+async function importProjectExcel(event) {
+  const file = event.target.files?.[0];
+  if(!file) return;
+  if(!window.XLSX) return alert('Excel解析库未加载，请检查网络或刷新页面');
+  try {
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, {type:'array'});
+    const keys = Object.keys(projectDatasetMeta);
+    let imported = 0;
+    wb.SheetNames.forEach(name => {
+      const key = keys.find(k => k.toLowerCase() === name.trim().toLowerCase());
+      if(!key) return;
+      setProjectDataset(key, normalizeImportedDataset(key, sheetToNumericGrid(wb.Sheets[name])));
+      imported++;
+    });
+    if(imported === 0 && wb.SheetNames.length) {
+      const key = document.getElementById('proj-data-kind').value;
+      setProjectDataset(key, normalizeImportedDataset(key, sheetToNumericGrid(wb.Sheets[wb.SheetNames[0]])));
+      imported = 1;
+    }
+    renderProjectDataEditor(false);
+    alert(`Excel导入完成：识别 ${imported} 个数据表`);
+  } catch(e) {
+    alert('Excel导入失败: '+e.message);
+  } finally {
+    event.target.value = '';
+  }
+}
+
 async function checkBackendStatus() {
   try {
     await api('GET', '/api/health');
@@ -1292,15 +1462,23 @@ async function createProject() {
     const weather_info = parseOptionalJson('proj-weather-json', 'weather_info') || {};
     const tempDry = parseOptionalJson('proj-temp-dry-json', 'temp_dry');
     const tempWet = parseOptionalJson('proj-temp-wet-json', 'temp_wet');
+    saveProjectEditorData(false);
+    Object.assign(weather_info, state.projectInputOverrides.weather_info);
     if(tempDry) weather_info.temp_dry = tempDry;
     if(tempWet) weather_info.temp_wet = tempWet;
     validateWeatherInfoShape(weather_info);
-    const tariff_info = parseOptionalJson('proj-tariff-json', 'tariff_info');
-    const load_info = parseOptionalJson('proj-load-json', 'load_info');
+    const tariff_info = {...state.projectInputOverrides.tariff_info, ...(parseOptionalJson('proj-tariff-json', 'tariff_info') || {})};
+    const capFee = parseNumberOrNull('proj-capacity-fee');
+    const exportPrice = parseNumberOrNull('proj-export-price');
+    const tariffName = document.getElementById('proj-tariff-name').value.trim();
+    if(capFee != null) tariff_info.capacity_fee = capFee;
+    if(exportPrice != null) tariff_info.export_price = exportPrice;
+    if(tariffName) tariff_info.tariff_name = tariffName;
+    const load_info = {...state.projectInputOverrides.load_info, ...(parseOptionalJson('proj-load-json', 'load_info') || {})};
     const payload = {name, province_key, region_name, data_year, typical_day_count, time_step_hours};
     if(Object.keys(weather_info).length) payload.weather_info = weather_info;
-    if(tariff_info) payload.tariff_info = tariff_info;
-    if(load_info) payload.load_info = load_info;
+    if(Object.keys(tariff_info).length) payload.tariff_info = tariff_info;
+    if(Object.keys(load_info).length) payload.load_info = load_info;
     const proj = await api('POST', '/api/projects', payload);
     state.projects.push(proj);
     state.currentProject = proj;
@@ -2015,6 +2193,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await checkBackendStatus();
   loadProvinces('proj-province');
   loadProvinces('diag-province');
+  renderProjectDataEditor(true);
   updateScenarioUI();
   document.getElementById('sc-gep-start').addEventListener('input', updateScenarioUI);
   document.getElementById('sc-gep-end').addEventListener('input', updateScenarioUI);
